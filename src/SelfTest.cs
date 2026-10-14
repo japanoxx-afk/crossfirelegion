@@ -25,12 +25,17 @@ public static class SelfTest {
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
+    var execute=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.ExecuteScriptCommand").Methods.Single(method=>method.Name=="Execute");
+    Require(execute.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::ExecuteMoney")),"시뮬레이션 자원 치트 후크");
     var fill=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.RosterHelper").Methods.Single(m=>m.Name=="FillRosterScratchpadForCategory");
     Require(fill.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::FillAll")),"전체 진영 유닛 등록");
     var check=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.SimRequirementValidator").Methods.Single(m=>m.Name=="SatisfiesRosterRequirement");
     Require(!check.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("get_CheckRosterIndex")),"슬롯 위치 제한 제거");
    }
    using(var a=AssemblyDefinition.ReadAssembly(ui)){
+    var chat=a.MainModule.Types.Single(t=>t.FullName=="Game.UI.HUDChatPanel");
+    Require(chat.Methods.Single(m=>m.Name=="SendMessage").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::TryCheat")),"채팅 치트 후크");
+    Require(!chat.Methods.Single(m=>m.Name=="Update").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("mIsCampaign")),"캠페인 Enter 입력 경로");
     var type=a.MainModule.Types.Single(t=>t.FullName=="Game.UI.Data.UISelectionData");
     Require(Convert.ToInt32(type.Methods.Single(m=>m.Name==".ctor").Body.Instructions[1].Operand)==64,"HUD 슬롯 64개");
     var provider=type.Methods.Single(m=>m.Name==".ctor").Body.Instructions.Single(i=>i.OpCode==Mono.Cecil.Cil.OpCodes.Newobj && i.Operand.ToString().Contains("UIValueProvider`2<Game.UI.Data.UIAbilitySlot"));

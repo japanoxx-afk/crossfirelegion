@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 [assembly:AssemblyVersion("0.2.0.0")]
-public static class CflRuntime {
+public static partial class CflRuntime {
  public const int Slots=64;
  static readonly BindingFlags Flags=BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance;
  static object Get(object o,string name){var p=o.GetType().GetProperty(name,Flags);return p!=null?p.GetValue(o,null):Field(o.GetType(),name).GetValue(o);}

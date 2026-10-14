@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=5;
+ public const int Revision=6;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -26,9 +26,16 @@ public static class Patcher {
  static void CheckStopped(){if(System.Diagnostics.Process.GetProcessesByName("Crossfire_Legion").Length!=0)throw new Exception("게임을 종료한 후 다시 시도하세요.");}
  static void Body(MethodDefinition m,params Instruction[] instructions){m.Body.Instructions.Clear();m.Body.ExceptionHandlers.Clear();m.Body.Variables.Clear();m.Body.InitLocals=false;foreach(var i in instructions)m.Body.Instructions.Add(i);}
  static MethodReference Hook(ModuleDefinition module,string method,int count){var scope=module.AssemblyReferences.FirstOrDefault(r=>r.Name=="CflRuntime");if(scope==null){scope=new AssemblyNameReference("CflRuntime",new Version(0,2,0,0));module.AssemblyReferences.Add(scope);}var m=new MethodReference(method,module.TypeSystem.Void,new TypeReference("","CflRuntime",module,scope)){HasThis=false};for(int i=0;i<count;i++)m.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));return m;}
+ static void Intercept(MethodDefinition target,MethodReference hook){
+  hook.ReturnType=target.Module.TypeSystem.Boolean;
+  var il=target.Body.GetILProcessor();var first=target.Body.Instructions[0];
+  il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_0));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));
+  il.InsertBefore(first,Instruction.Create(OpCodes.Brfalse,first));il.InsertBefore(first,Instruction.Create(OpCodes.Ret));
+ }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
   if(name=="Carbon.Simulation.dll"){
+   Intercept(Find(a,"Carbon.Simulation.ExecuteScriptCommand","Execute"),Hook(module,"ExecuteMoney",1));
    var fill=Find(a,"Carbon.Simulation.RosterHelper","FillRosterScratchpadForCategory");
    if(!fill.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterSlotAttributes::get_Items")))throw new Exception("지원하지 않는 진영 유닛 등록 코드");
    Body(fill,Instruction.Create(OpCodes.Ldarg_0),Instruction.Create(OpCodes.Ldarg_2),Instruction.Create(OpCodes.Call,Hook(module,"FillAll",2)),Instruction.Create(OpCodes.Ret));
@@ -36,6 +43,10 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   Intercept(Find(a,"Game.UI.HUDChatPanel","SendMessage"),Hook(module,"TryCheat",1));
+   var chatUpdate=Find(a,"Game.UI.HUDChatPanel","Update");
+   var campaign=chatUpdate.Body.Instructions.Single(i=>i.OpCode==OpCodes.Ldfld && ((FieldReference)i.Operand).Name=="mIsCampaign");
+   campaign.OpCode=OpCodes.Pop;campaign.Operand=null;chatUpdate.Body.GetILProcessor().InsertAfter(campaign,Instruction.Create(OpCodes.Ldc_I4_0));
    var ctor=Find(a,"Game.UI.Data.UISelectionData",".ctor");
    if(ctor.Body.Instructions[1].OpCode!=OpCodes.Ldc_I4_S || Convert.ToInt32(ctor.Body.Instructions[1].Operand)!=12)throw new Exception("지원하지 않는 HUD 슬롯 생성 코드");
    ctor.Body.Instructions[1].Operand=(sbyte)64;
