@@ -43,13 +43,31 @@ public static partial class CflRuntime {
   var panel=TypeByName("Game.UI.CommandPanel");if(panel==null)return false;
   // Only the command grid directly owned by CommandPanel, never tooltips or nested lists.
   object parent=Get(Get(list,"transform"),"parent");
-  return parent!=null && Component(parent,panel)!=null;
+  return parent!=null && (string)Get(parent,"name")!="CommanderAbilityPanel" && Component(parent,panel)!=null;
+ }
+ // CommanderAbilityPanel also uses Game.UI.CommandPanel; it must never enter the production grid.
+ public static bool LayoutGlobalSkills(object list){
+  object transform=Get(list,"transform"),panel=Get(transform,"parent");
+  if(panel==null || (string)Get(panel,"name")!="CommanderAbilityPanel")return false;
+  object grid=Component(list,TypeByName("UnityEngine.UI.GridLayoutGroup"));if(grid==null)return true;
+  object cell=Get(grid,"cellSize"),spacing=Get(grid,"spacing"),padding=Get(grid,"padding");
+  float width=2*(float)Get(cell,"x")+(float)Get(spacing,"x")+(int)Get(padding,"left")+(int)Get(padding,"right")+16;
+  float height=(float)Get(cell,"y")+(int)Get(padding,"top")+(int)Get(padding,"bottom")+12;
+  var constraint=grid.GetType().GetProperty("constraint");constraint.SetValue(grid,Enum.ToObject(constraint.PropertyType,1),null);Set(grid,"constraintCount",2);
+  Set(panel,"anchorMin",Vector(0,1));Set(panel,"anchorMax",Vector(0,1));Set(panel,"pivot",Vector(0,0));
+  Set(panel,"sizeDelta",Vector(width,height));Set(panel,"anchoredPosition",Vector(12,12));
+  object root=Get(panel,"parent");if(root!=null){
+   object powerups=root.GetType().GetMethod("Find",new[]{typeof(string)}).Invoke(root,new object[]{"UIListPowerupAbilities"});
+   if(powerups!=null){object position=Get(powerups,"anchoredPosition");float rootHeight=(float)Get(Get(root,"rect"),"height");Set(powerups,"anchoredPosition",Vector((float)Get(position,"x"),rootHeight+height+24));}
+  }
+  return true;
  }
  class Layout {public object Panel,Grid,EmptyGrid,Position,Viewport,Scale;public float CellX,CellY,SpacingX,SpacingY;public int Left,Right,Top,Bottom;}
  static readonly Dictionary<object,Layout> layouts=new Dictionary<object,Layout>();
  static int visibleButtons;
  public static void BeforeList(object list){try{if(IsCommandList(list)){Field(list.GetType(),"m_MaxItems").SetValue(list,Slots);var invalid=Field(list.GetType(),"m_InvalidDataBehavior");invalid.SetValue(list,Enum.ToObject(invalid.FieldType,0));}}catch(Exception e){Log(e);}}
  public static void AfterList(object list){try{
+  if(LayoutGlobalSkills(list))return;
   if(!IsCommandList(list))return;
   object transform=Get(list,"transform");
   object group=Component(list,TypeByName("UnityEngine.UI.GridLayoutGroup"));if(group==null)return;
@@ -63,6 +81,7 @@ public static partial class CflRuntime {
   Log("Native command grid registered; capacity 64; button transforms preserved");
  }catch(Exception e){Log(e);}}
  public static void AfterRefresh(object list){try{
+  if(LayoutGlobalSkills(list))return;
   if(!IsCommandList(list))return;
   object provider=Get(list,"DataProvider");if(provider==null)return;
   var getItem=provider.GetType().GetMethod("GetItemAtIndex",new[]{typeof(int)});

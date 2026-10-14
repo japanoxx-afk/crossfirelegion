@@ -16,7 +16,7 @@ namespace UnityEngine {
  public struct Vector2 {public float x,y;public Vector2(float a,float b){x=a;y=b;}}
  public struct Vector3 {public float x,y,z;public Vector3(float a,float b,float c){x=a;y=b;z=c;}}
  public struct Rect {public float width,height;}
- public class Transform {public bool hasPanel;public Transform parent;public Vector2 anchorMin,anchorMax,pivot,sizeDelta,anchoredPosition;public Vector3 localScale=new Vector3(1,1,1);public Rect rect=new Rect{width=0,height=0};public object GetComponent(Type type){return hasPanel?new Game.UI.CommandPanel():null;}public object Find(string path){return null;}}
+ public class Transform {public string name="CommandPanel";public bool hasPanel;public Transform parent;public Vector2 anchorMin,anchorMax,pivot,sizeDelta,anchoredPosition;public Vector3 localScale=new Vector3(1,1,1);public Rect rect=new Rect{width=0,height=0};public object GetComponent(Type type){return hasPanel?new Game.UI.CommandPanel():null;}public Transform powerups;public object Find(string path){return path=="UIListPowerupAbilities"?powerups:null;}}
  public class Sprite {public string name;}
  public static class Resources {public static UnityEngine.UI.Image[] Images;public static object FindObjectsOfTypeAll(Type t){return Images??new UnityEngine.UI.Image[0];}}
  public static class Debug {public static void Log(object o){Console.WriteLine(o);}}
@@ -70,8 +70,16 @@ class RuntimeTests {
   CflRuntime.Pack(new Selection(),new Button[64]);Check(shortScreen.transform.parent.anchoredPosition.y==12 && shortScreen.transform.parent.sizeDelta.y==244,"Selecting worker must restore original position");
   list.DataProvider.Data[10]=new MockData{HasValue=true};list.ListItems[10].gameObject.SetActive(true);CflRuntime.AfterRefresh(list);
   Check(list.ListItems[0].gameObject.active && list.ListItems[0].transform.localScale.x==0 && list.ListItems[10].gameObject.active && list.ListItems[10].transform.localScale.x==1 && !list.ListItems[12].gameObject.active,"Native holes must retain space without hiding build C or adding empty rows");
+  var global=new MockList();global.transform.parent.name="CommanderAbilityPanel";global.transform.parent.parent=new UnityEngine.Transform{rect=new UnityEngine.Rect{width=350,height=244},powerups=new UnityEngine.Transform{anchoredPosition=new UnityEngine.Vector2(32,276)}};
+  CflRuntime.BeforeList(global);CflRuntime.AfterList(global);
+  Check(global.m_MaxItems==12 && global.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Global abilities inherited production capacity/hide behavior");
+  Check(global.layout.constraintCount==2 && global.transform.parent.anchorMin.x==0 && global.transform.parent.anchorMin.y==1 && global.transform.parent.pivot.y==0 && global.transform.parent.anchoredPosition.x==12 && global.transform.parent.anchoredPosition.y==12,"Global skills must form a row above the minimap");
+  Check(global.transform.parent.parent.powerups.anchoredPosition.y==244+global.transform.parent.sizeDelta.y+24,"Powerup row must clear global skills");
+  var globalSize=global.transform.parent.sizeDelta;CflRuntime.Pack(selection,new Button[64]);
+  Check(global.transform.parent.sizeDelta.x==globalSize.x && global.transform.parent.sizeDelta.y==globalSize.y,"Selecting production changed global skill geometry");
+  CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
-  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, nested UI excluded.");
+  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, global skills in separate horizontal row, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
