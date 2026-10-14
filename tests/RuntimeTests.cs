@@ -53,10 +53,21 @@ class RuntimeTests {
   Check(list.m_MaxItems==64 && list.layout.enabled && list.m_InvalidDataBehavior==MockList.Invalid.Hide,"Native grid and hidden empty slots");Check(list.layout.constraintCount==8 && list.transform.parent.sizeDelta.x==620,"Expanded native grid dimensions");
   Check(list.transform.sizeDelta.x==0 && list.ListItems[63].transform.sizeDelta.x==0 && list.ListItems[63].transform.localScale.x==1,"Zero-size native templates must not be manually resized or scaled");
   CflRuntime.Pack(new Selection(),new Button[64]);Check(list.transform.parent.sizeDelta.x==316 && list.transform.parent.sizeDelta.y==244 && list.transform.parent.anchoredPosition.y==12,"Original HUD geometry restored for small selections");
+  foreach(int count in new[]{13,17,24,32,33,46,64}){
+   var production=new Selection();for(int i=0;i<count;i++)production.mProductionButtonScratchpad.Add(Make(1000+i));
+   CflRuntime.Pack(production,new Button[64]);var panel=list.transform.parent;
+   Check(panel.anchoredPosition.y==348 && panel.anchoredPosition.x==-6,"Expanded grid must completely clear the lower HUD frame: "+count);
+   Check(panel.anchoredPosition.y+panel.sizeDelta.y<=1048,"Expanded grid exceeded top safe margin: "+count);
+   Check(panel.sizeDelta.x+6<=1904,"Expanded grid exceeded left safe margin: "+count);
+  }
+  list.transform.parent.parent=new UnityEngine.Transform{rect=new UnityEngine.Rect{width=1280,height=720}};
+  var shortScreen=new MockList();shortScreen.transform.parent.parent=new UnityEngine.Transform{rect=new UnityEngine.Rect{width=1280,height=720}};for(int i=0;i<64;i++)shortScreen.ListItems.Add(new MockUIItem());CflRuntime.BeforeList(shortScreen);CflRuntime.AfterList(shortScreen);
+  Check(shortScreen.transform.parent.anchoredPosition.y+shortScreen.transform.parent.sizeDelta.y<=688 && shortScreen.transform.parent.sizeDelta.x+6<=1264,"Short viewport must widen grid instead of clipping top or overlapping HUD");
+  CflRuntime.Pack(new Selection(),new Button[64]);Check(shortScreen.transform.parent.anchoredPosition.y==12 && shortScreen.transform.parent.sizeDelta.y==244,"Selecting worker must restore original position");
   list.DataProvider.Data[10]=new MockData{HasValue=true};list.ListItems[10].gameObject.SetActive(true);CflRuntime.AfterRefresh(list);
   Check(list.ListItems[0].gameObject.active && list.ListItems[0].transform.localScale.x==0 && list.ListItems[10].gameObject.active && list.ListItems[10].transform.localScale.x==1 && !list.ListItems[12].gameObject.active,"Native holes must retain space without hiding build C or adding empty rows");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
-  Console.WriteLine("PASS: full roster, 46 distinct buttons, build C at slot 10, submenu/back Z, no production/menu collisions, invisible native holes retain space, native layout preserved, nested lists excluded.");
+  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons clear HUD frame, viewport bounds at 1080 and 720, small selection restores original position, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
