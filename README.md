@@ -27,16 +27,18 @@ Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포�
 
 ## 패치 범위와 검증 상태
 
-`Crossfire_Legion_Data/Managed/Carbon.Simulation.dll`의 `Carbon.Simulation.RosterHelper.IsAbilityInRoster`가 항상 참을 반환하도록 수정합니다. `AbilitiesProcessor.AddAbility`가 덱에 선택하지 않은 생산·업그레이드 능력을 제외하는 분기를 통과시키는 방식입니다. 해당 진영의 건물에 원래 정의된 유닛 생산 능력이 대상이며, 다른 진영 유닛이나 미보유 DLC를 추가하지 않습니다. 자원·테크 요구 조건도 그대로 적용됩니다.
+v0.2.0에서는 `RosterHelper.FillRosterScratchpadForCategory`가 진영의 각 슬롯에 속한 모든 대체 유닛을 등록하도록 변경합니다. 기존 v0.1.x의 표시 필터 우회는 제거합니다. 실제 로스터 등록을 통해 생산 능력·업그레이드·기술 초기화에 전체 유닛 목록이 전달됩니다. `SatisfiesRosterRequirement`의 덱 슬롯 번호 비교를 제거하며 로스터 소속 검사와 자원·테크·인구 요구 조건은 유지합니다.
 
-편성 화면의 9개 슬롯이나 저장된 덱 형식은 확장하지 않습니다. 게임 내 생산 필터를 해제해 같은 목적을 달성하는 방식입니다. AI에도 영향을 줄 수 있습니다. 캠페인의 스크립트나 별도 잠금 조건까지 해제하지 않습니다. 온라인 경기 호환성은 검증되지 않았으므로 오프라인/사용자 지정 테스트 용도로 사용하세요.
+편성 화면의 9개 슬롯과 저장된 덱 형식은 유지합니다. HUD 명령/생산 데이터와 실제 클릭 가능한 목록을 12칸에서 64칸(8×8, 480×480 UI 단위)으로 늘립니다. 생산·업그레이드·일반 명령을 고유 버튼별로 연속 배치하여 위치 충돌을 방지합니다. 기존 단축키 범위 밖의 버튼은 마우스로 누릅니다. 다른 UI 목록은 확장하지 않습니다. `CflRuntime.dll`은 자체 작성한 코드만 포함하며 런처 리소스에서 설치됩니다.
+
+게임을 종료한 상태에서 **모든 유닛 패치 적용**을 누르면 v0.1.x에서 바로 전환됩니다. 적용 후 반드시 **새 경기**를 시작하세요. 이미 생성된 경기/저장 파일의 로스터에는 소급 적용되지 않습니다. AI에도 영향을 줄 수 있고 캠페인 스크립트·온라인 호환성은 검증되지 않았습니다. 오프라인/사용자 지정 경기에서 사용하세요.
 
 확인한 원본 DLL SHA-256:
 `3196ffcd56e58372b4f90c541d22572491da0ba0956d1b0b4b8b4d4dd303731d`
 
-자동 검증: 실제 DLL 복사본 패치, 적용 결과 IL 검사, 중복 적용 차단, 변경된 파일의 복원 차단, 바이트 단위 원본 복원. 실제 게임 경기에서 모든 유닛의 생산 및 메뉴 배치는 아직 검증하지 않았습니다.
+자동 검증: 전체 대체 유닛 등록·중복 제거, 서로 다른 버튼 46개 무손실 배치, 64번째 슬롯 위치, 명령 패널 외 UI 유지, 실제 DLL 복사본의 세 파일 패치 및 IL 검사, 단축키 경계 수정, 중복 적용 차단, 복원 전 전체 무결성 검사, 세 DLL의 바이트 단위 원본 복원, 이전 패치 자동 전환. 실제 게임에서 유닛이 생산 완료되는지와 해상도별 HUD 배치는 아직 검증하지 않았습니다. 게임 로그의 `[CFL All Units]` 항목으로 HUD 후크 결과를 확인할 수 있습니다.
 
-백업은 원본 DLL 옆의 `.cfl-original`, 검증 기록은 `.cfl-patch.json`에 저장됩니다. 파일이 게임 업데이트로 바뀌면 기존 백업으로 덮어쓰지 않고 중단합니다. 이런 경우 Steam 파일 무결성 검사로 원본을 확보하고 백업을 별도로 보관한 뒤 다시 적용하세요.
+수정 파일은 `Carbon.Simulation.dll`, `Game.UI.dll`, `Carbon.UI.Unity.dll`이며 원본은 각각 `.cfl-original`로 백업합니다. 전체 상태/복구 기록은 Managed 폴더의 `CflMod.state.json`에 저장합니다. 적용 도중 문제가 생기면 복원하고, 변경된 게임 파일을 발견하면 덮어쓰지 않고 중단합니다. 원본 복원 시 자체 런타임도 제거합니다.
 
 ## 런처 업데이트
 
@@ -49,14 +51,14 @@ Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포�
 # 출력: dist/Launcher.exe, build/*.zip
 
 # 원본 게임 DLL을 대상으로 복사본 테스트 (게임을 종료한 상태)
-Start-Process ./dist/versions/0.1.0/Application.exe -ArgumentList '--self-test', '"C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)"' -Wait
-# 결과: dist/versions/0.1.0/test-result.txt
+./scripts/test-runtime.ps1 -Version 0.2.0 -GamePath 'C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)'
+# 결과: dist/versions/0.2.0/test-result.txt
 ```
 
 코드 변경을 커밋한 뒤 다음 명령으로 새 버전을 배포합니다.
 
 ```powershell
-./scripts/release.ps1 -Version 0.1.1
+./scripts/release.ps1 -Version 0.2.1
 ```
 
 이 명령은 `version.txt`를 올리고 커밋·태그·푸시합니다. GitHub Actions가 Windows에서 빌드하고 Release에 런처 ZIP과 업데이트 파일을 게시합니다. 매 변경 배포 시 버전을 증가시켜야 하며, Actions 성공 이후 사용자의 업데이트 버튼에 반영됩니다. GitHub 인증/저장소 쓰기 권한과 Actions 사용 가능 상태가 필요합니다.

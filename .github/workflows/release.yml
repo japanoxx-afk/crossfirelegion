@@ -16,6 +16,9 @@ jobs:
       - name: Test Steam launch routing
         shell: pwsh
         run: ./scripts/test-steam.ps1
+      - name: Test full roster and command HUD logic
+        shell: pwsh
+        run: ./scripts/test-runtime.ps1 -Version (Get-Content version.txt -Raw).Trim()
       - name: Publish release
         shell: pwsh
         env:
