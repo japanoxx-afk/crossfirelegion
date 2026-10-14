@@ -38,6 +38,10 @@ public static class SelfTest {
     var boundary=type.Methods.Single(m=>m.Name=="UpdateAbilities").Body.Instructions.Single(i=>i.OpCode==Mono.Cecil.Cil.OpCodes.Bge);
     Require(((Mono.Cecil.Cil.Instruction)boundary.Operand).OpCode==Mono.Cecil.Cil.OpCodes.Ldarg_0,"단축키 범위 밖 슬롯 저장 유지");
    }
+   using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Carbon.UI.Unity.dll"))){
+    var refresh=a.MainModule.Types.Single(t=>t.FullName=="Carbon.UI.Unity.UIList").Methods.Single(m=>m.Name=="RefreshDataWithoutLinks");
+    Require(refresh.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::AfterRefresh")),"기본 단축키 빈칸 보존 후크");
+   }
    Patcher.Restore(test);foreach(string name in names)Require(Patcher.Hash(Path.Combine(Path.GetDirectoryName(dll),name))==originals[name],"원본 정확한 복원: "+name);
    Require(!File.Exists(Path.Combine(Path.GetDirectoryName(dll),"CflRuntime.dll")),"런타임 복원 정리");
    Require(!File.Exists(dll+".cfl-original"),"복원 후 백업 정리");

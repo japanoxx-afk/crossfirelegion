@@ -18,18 +18,23 @@ public static class CflRuntime {
    add.Invoke(destination,new[]{Activator.CreateInstance(itemType,new[]{item})});
   }
  }
- // Sequential packing removes collisions between alternative units and their upgrades.
+ // Native commands and submenus retain their authored hotkey slots.
  public static void Pack(object selection,Array buttons){
-  int next=0;var seen=new HashSet<object>();
-  foreach(string field in new[]{"mProductionButtonScratchpad","mUpgradeButtonScratchpad","mAbilityButtonScratchpad"}){
+  int next=0,extent=0;var seen=new HashSet<object>();var deferred=new List<object>();
+  foreach(object entry in (IEnumerable)Field(selection.GetType(),"mAbilityButtonScratchpad").GetValue(selection)){
+   object button=Resolve(Get(entry,"Button"));if(button==null || !seen.Add(Get(button,"ID")))continue;
+   int slot=(int)Get(entry,"Index");
+   if(slot>=0 && slot<buttons.Length && buttons.GetValue(slot)==null){buttons.SetValue(button,slot);extent=Math.Max(extent,slot+1);}else deferred.Add(button);
+  }
+  foreach(string field in new[]{"mProductionButtonScratchpad","mUpgradeButtonScratchpad"}){
    foreach(object entry in (IEnumerable)Field(selection.GetType(),field).GetValue(selection)){
     object button=Resolve(Get(entry,"Button"));if(button==null || !seen.Add(Get(button,"ID")))continue;
-    if(next>=buttons.Length)throw new InvalidOperationException("CFL command grid capacity exceeded");
-    buttons.SetValue(button,next++);
+    deferred.Add(button);
    }
   }
-  visibleButtons=next;
-  foreach(var list in new List<object>(layouts.Keys)){try{ApplyLayout(layouts[list],next);}catch(Exception e){layouts.Remove(list);Log(e);}}
+  foreach(object button in deferred){while(next<buttons.Length && buttons.GetValue(next)!=null)next++;if(next>=buttons.Length)throw new InvalidOperationException("CFL command grid capacity exceeded");buttons.SetValue(button,next);extent=Math.Max(extent,++next);}
+  visibleButtons=extent;
+  foreach(var list in new List<object>(layouts.Keys)){try{ApplyLayout(layouts[list],extent);}catch(Exception e){layouts.Remove(list);Log(e);}}
  }
  static Type TypeByName(string name){foreach(var a in AppDomain.CurrentDomain.GetAssemblies()){var t=a.GetType(name);if(t!=null)return t;}return null;}
  static object Vector(float x,float y){return Activator.CreateInstance(TypeByName("UnityEngine.Vector2"),new object[]{x,y});}
@@ -55,6 +60,19 @@ public static class CflRuntime {
   }
   ApplyLayout(layouts[list],visibleButtons);
   Log("Native command grid registered; capacity 64; button transforms preserved");
+ }catch(Exception e){Log(e);}}
+ public static void AfterRefresh(object list){try{
+  if(!IsCommandList(list))return;
+  object provider=Get(list,"DataProvider");if(provider==null)return;
+  var getItem=provider.GetType().GetMethod("GetItemAtIndex",new[]{typeof(int)});
+  int i=0;foreach(object item in (IEnumerable)Get(list,"ListItems")){
+   object data=getItem.Invoke(provider,new object[]{i});bool valid=data!=null && (bool)data.GetType().GetMethod("get_HasValue").Invoke(data,null);
+   if(!valid && i<12){
+    object go=Get(item,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{true});
+    Set(Get(item,"transform"),"localScale",Activator.CreateInstance(TypeByName("UnityEngine.Vector3"),new object[]{0f,0f,0f}));
+   }
+   i++;
+  }
  }catch(Exception e){Log(e);}}
  static void ApplyLayout(Layout layout,int count){
   int columns=count>32?8:4,rows=Math.Max(3,(count+columns-1)/columns);

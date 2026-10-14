@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=3;
+ public const int Revision=4;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -53,6 +53,8 @@ public static class Patcher {
    var init=Find(a,"Carbon.UI.Unity.UIList","Initialize");var il=init.Body.GetILProcessor();var first=init.Body.Instructions[0];
    il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_0));il.InsertBefore(first,Instruction.Create(OpCodes.Call,Hook(module,"BeforeList",1)));
    foreach(var ret in init.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;il.InsertAfter(ret,Instruction.Create(OpCodes.Call,Hook(module,"AfterList",1)));il.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
+   var refresh=Find(a,"Carbon.UI.Unity.UIList","RefreshDataWithoutLinks");var refreshIl=refresh.Body.GetILProcessor();
+   foreach(var ret in refresh.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;refreshIl.InsertAfter(ret,Instruction.Create(OpCodes.Call,Hook(module,"AfterRefresh",1)));refreshIl.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
   }
   a.Write(output);
  }}}
