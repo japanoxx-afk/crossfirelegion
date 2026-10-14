@@ -1,0 +1,23 @@
+name: Build and publish launcher
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build portable launcher
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag and version.txt differ' }
+          gh release create "v$version" "build/CrossfireLegion-Launcher-$version.zip" build/update.zip build/update.sha256 --title "Crossfire Legion Launcher v$version" --notes "Windows launcher with GitHub updates and reversible all-units production patch. See README for testing limits."
