@@ -9,6 +9,7 @@ public static class SelfTest {
   try{
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
+   if(Patcher.Status(game).Contains("적용됨"))source+=".cfl-original";
    Directory.CreateDirectory(Path.GetDirectoryName(dll));File.Copy(source,dll);
    string original=Patcher.Hash(dll);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){

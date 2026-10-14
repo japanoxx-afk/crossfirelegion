@@ -25,7 +25,7 @@ public static class Updater {
     string expected=(await web.DownloadStringTaskAsync(prefix+"update.sha256")).Trim().Split(' ')[0].ToLowerInvariant();
     if(expected.Length!=64 || Patcher.Hash(zip)!=expected)throw new Exception("업데이트 무결성 검사 실패");
     using(var archive=ZipFile.OpenRead(zip)){
-     string[] names={"Application.exe","Mono.Cecil.dll"};
+     string[] names={"Application.exe","Mono.Cecil.dll","THIRD-PARTY-NOTICES.txt"};
      if(archive.Entries.Count!=names.Length)throw new Exception("예상하지 못한 업데이트 파일 구성");
      foreach(string name in names){var entry=archive.GetEntry(name);if(entry==null || entry.Length>50*1024*1024)throw new Exception("잘못된 업데이트 파일");entry.ExtractToFile(Path.Combine(staging,name));}
     }

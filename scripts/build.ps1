@@ -11,6 +11,7 @@ Expand-Archive $package (Join-Path $tools 'cecil') -Force
 $out = Join-Path $root "dist/versions/$Version"
 New-Item -ItemType Directory -Force $out | Out-Null
 Copy-Item (Join-Path $tools 'cecil/lib/net40/Mono.Cecil.dll') $out -Force
+Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $out -Force
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $app = Get-Content (Join-Path $root 'src/Application.cs') -Raw
 $app = $app.Replace('const string CurrentVersion="0.1.0";', "const string CurrentVersion=`"$Version`";").Replace('AssemblyVersion("0.1.0.0")', "AssemblyVersion(`"$Version.0`" )")
@@ -23,8 +24,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Bootstrap compilation failed' }
 Set-Content (Join-Path $root 'dist/current.txt') $Version -NoNewline -Encoding ascii
 $release = Join-Path $root 'build'
 New-Item -ItemType Directory -Force $release | Out-Null
-Compress-Archive -Path "$out/Application.exe","$out/Mono.Cecil.dll" -DestinationPath "$release/update.zip" -Force
+Compress-Archive -Path "$out/Application.exe","$out/Mono.Cecil.dll","$out/THIRD-PARTY-NOTICES.txt" -DestinationPath "$release/update.zip" -Force
 $hash = (Get-FileHash "$release/update.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content "$release/update.sha256" $hash -Encoding ascii
-Compress-Archive -Path "$root/dist/Launcher.exe","$root/dist/current.txt","$root/dist/versions" -DestinationPath "$release/CrossfireLegion-Launcher-$Version.zip" -Force
+$portable = Join-Path $release "portable-$Version"
+New-Item -ItemType Directory -Force "$portable/versions/$Version" | Out-Null
+Copy-Item "$root/dist/Launcher.exe","$root/dist/current.txt" $portable -Force
+Copy-Item "$out/Application.exe","$out/Mono.Cecil.dll","$out/THIRD-PARTY-NOTICES.txt" "$portable/versions/$Version" -Force
+Compress-Archive -Path "$portable/*" -DestinationPath "$release/CrossfireLegion-Launcher-$Version.zip" -Force
 Write-Output "Build complete: $root/dist/Launcher.exe"
