@@ -26,7 +26,7 @@ class Launcher:Form {
   actions.SetBounds(25,194,710,88);actions.Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right;Controls.Add(actions);
   AddButton("모든 유닛 패치 적용",()=>{string game=path.Text;return Task.Run(()=>Patcher.Apply(game));});
   AddButton("원본 복원",()=>{string game=path.Text;return Task.Run(()=>Patcher.Restore(game));});
-  AddButton("게임 실행",()=>{Save();string exe=Path.Combine(path.Text,"Crossfire_Legion.exe");if(!File.Exists(exe))throw new Exception("게임 실행 파일을 찾지 못했습니다.");Process.Start(new ProcessStartInfo(exe){WorkingDirectory=path.Text});return Task.FromResult(0);});
+  AddButton("Steam으로 게임 실행",()=>{Save();SteamLaunch.Start(path.Text);Write("Steam에 실행을 요청했습니다. Steam 로그인 및 온라인 상태를 확인하세요.");return Task.FromResult(0);});
   AddButton("런처 업데이트",async()=>{Write("GitHub 최신 버전 확인 중…");string next=await Updater.Update(root,CurrentVersion);if(next==null){Write("이미 최신 버전입니다.");return;}Process.Start(new ProcessStartInfo(next,"\""+root.TrimEnd('\\')+"\""){WorkingDirectory=Path.GetDirectoryName(next)});Close();});
   Controls.Add(new Label{Text="덱 화면은 9칸을 유지합니다. 패치 후 해당 진영의 생산·업그레이드 필터가 해제됩니다.\n오프라인·사용자 지정 테스트용. 실제 경기 및 생산 메뉴 표시는 게임 내 확인이 필요합니다.",Location=new Point(25,287),Size=new Size(710,52),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,ForeColor=Color.Silver});
   log.SetBounds(25,350,710,115);log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;log.BackColor=Color.FromArgb(13,17,23);log.ForeColor=Color.LightGray;Controls.Add(log);

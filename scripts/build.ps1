@@ -17,7 +17,7 @@ $app = Get-Content (Join-Path $root 'src/Application.cs') -Raw
 $app = $app.Replace('const string CurrentVersion="0.1.0";', "const string CurrentVersion=`"$Version`";").Replace('AssemblyVersion("0.1.0.0")', "AssemblyVersion(`"$Version.0`" )")
 $generated = Join-Path $tools 'Application.cs'
 Set-Content $generated $app -Encoding utf8
-& $csc /nologo /target:winexe /optimize+ "/out:$out/Application.exe" "/reference:$out/Mono.Cecil.dll" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll $generated (Join-Path $root 'src/Patcher.cs') (Join-Path $root 'src/Updater.cs') (Join-Path $root 'src/SelfTest.cs')
+& $csc /nologo /target:winexe /optimize+ "/out:$out/Application.exe" "/reference:$out/Mono.Cecil.dll" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll $generated (Join-Path $root 'src/Patcher.cs') (Join-Path $root 'src/Updater.cs') (Join-Path $root 'src/SelfTest.cs') (Join-Path $root 'src/SteamLaunch.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Application compilation failed' }
 & $csc /nologo /target:winexe /optimize+ "/out:$root/dist/Launcher.exe" /reference:System.Windows.Forms.dll (Join-Path $root 'src/Bootstrap.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Bootstrap compilation failed' }

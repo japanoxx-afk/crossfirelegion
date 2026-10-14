@@ -13,6 +13,9 @@ jobs:
       - name: Build portable launcher
         shell: pwsh
         run: ./scripts/build.ps1
+      - name: Test Steam launch routing
+        shell: pwsh
+        run: ./scripts/test-steam.ps1
       - name: Publish release
         shell: pwsh
         env:

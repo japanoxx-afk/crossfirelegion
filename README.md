@@ -6,12 +6,24 @@ Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백
 
 1. [최신 릴리스](https://github.com/japanoxx-afk/crossfirelegion/releases/latest)의 `CrossfireLegion-Launcher-버전.zip`을 다운로드하고 쓰기 가능한 폴더에 압축을 풉니다.
 2. `Launcher.exe`를 실행합니다. 게임 경로를 지정하고 게임을 종료한 상태에서 **모든 유닛 패치 적용**을 누릅니다.
-3. **게임 실행**을 눌러 사용자 지정/오프라인 경기에서 생산 메뉴를 확인합니다. 설치 폴더 쓰기 권한이 없을 때만 런처를 관리자 권한으로 실행하세요.
+3. Steam에 로그인한 뒤 **Steam으로 게임 실행**을 눌러 사용자 지정/오프라인 경기에서 생산 메뉴를 확인합니다. 설치 폴더 쓰기 권한이 없을 때만 런처를 관리자 권한으로 실행하세요.
 4. **원본 복원**으로 적용 전 DLL을 되돌릴 수 있습니다.
 
 기본 게임 경로: `C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)`
 
 Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포물에 포함하지 않습니다.
+
+## Steam 연결 오류 수정 (v0.1.2)
+
+기존 런처의 게임 EXE 직접 실행을 Steam 실행 요청으로 변경했습니다. 선택한 폴더가 Steam 설치 매니페스트(`appmanifest_1072190.acf`)와 일치하는지 확인한 뒤 `steam://run/1072190`을 Windows의 Steam 프로토콜 처리기로 전달합니다. 폴더 이름에 Demo가 있어도 실제 설치 매니페스트의 AppID 1072190을 사용합니다. 이미 실행 중인 게임에 중복 실행을 요청하지 않습니다.
+
+오류 화면이 열린 게임을 완전히 종료하고 런처를 업데이트한 뒤 Steam에 로그인한 상태에서 다시 실행하세요. 이 변경은 실행 경로를 수정하며, Steam 계정 인증이나 서버 연결 성공을 보장하지는 않습니다. 동일한 오류가 Steam 라이브러리에서 직접 실행할 때도 발생하면 Steam 온라인 상태와 계정의 게임 이용 권한을 확인하세요.
+
+실행 경로 회귀 검증(실제 게임을 실행하지 않음):
+
+```powershell
+./scripts/test-steam.ps1 -GamePath 'C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)'
+```
 
 ## 패치 범위와 검증 상태
 
