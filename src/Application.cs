@@ -28,7 +28,7 @@ class Launcher:Form {
   AddButton("원본 복원",()=>{string game=path.Text;return Task.Run(()=>Patcher.Restore(game));});
   AddButton("Steam으로 게임 실행",()=>{Save();SteamLaunch.Start(path.Text);Write("Steam에 실행을 요청했습니다. Steam 로그인 및 온라인 상태를 확인하세요.");return Task.FromResult(0);});
   AddButton("런처 업데이트",async()=>{Write("GitHub 최신 버전 확인 중…");string next=await Updater.Update(root,CurrentVersion);if(next==null){Write("이미 최신 버전입니다.");return;}Process.Start(new ProcessStartInfo(next,"\""+root.TrimEnd('\\')+"\""){WorkingDirectory=Path.GetDirectoryName(next)});Close();});
-  Controls.Add(new Label{Text="진영 전체 유닛 + 기본 크기를 유지하는 자동 확장 HUD(최대 64개). 적용 버튼으로 갱신.\n새 경기에서 반영. 싱글플레이: Enter → money(자원 9999) / speed(생산 10배) → Enter",Location=new Point(25,287),Size=new Size(710,52),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,ForeColor=Color.Silver});
+  Controls.Add(new Label{Text="진영 전체 유닛 + 하단 고정 생산 HUD(최대 64개), 생산창 장식 테두리 제거. 적용 버튼으로 갱신.\n새 경기에서 반영. 싱글플레이: Enter → money(자원 9999) / speed(생산·건설 100배) / pop(최대 인구) → Enter",Location=new Point(25,287),Size=new Size(710,52),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,ForeColor=Color.Silver});
   log.SetBounds(25,350,710,115);log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;log.BackColor=Color.FromArgb(13,17,23);log.ForeColor=Color.LightGray;Controls.Add(log);
   path.Text=File.Exists(config)?File.ReadAllText(config):@"C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)";
   path.Leave+=(s,e)=>{Save();RefreshStatus();};RefreshStatus();Write("런처 준비 완료 · v"+CurrentVersion);

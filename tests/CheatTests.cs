@@ -23,7 +23,7 @@ namespace Carbon.Simulation {
  public static class StoreHelper<T>{public static CheatStore Store=new CheatStore();public static CheatStore GetOrAddStoreComponent(object owner){return Store;}}
 }
 public struct CheatReal {
- public int Value;public static CheatReal FromInt(int n){return new CheatReal{Value=n};}public static implicit operator CheatReal(int n){return new CheatReal{Value=n};}
+ public int Value;public static int IntValue(CheatReal n){return n.Value;}public static CheatReal FromInt(int n){return new CheatReal{Value=n};}public static implicit operator CheatReal(int n){return new CheatReal{Value=n};}
  public static bool operator <(CheatReal a,CheatReal b){return a.Value<b.Value;}
  public static bool operator >(CheatReal a,CheatReal b){return a.Value>b.Value;}
 }
@@ -31,7 +31,7 @@ public class CheatAsset {public string Name;}
 public class CheatReference {public CheatAsset Asset;public static implicit operator CheatAsset(CheatReference r){return r.Asset;}}
 public class CheatCapacity {public CheatReference Inventory;}
 public class CheatInventory {
- public CheatCapacity Attributes;public CheatReal ActiveCap=7500;public CheatReal Amount;
+ public CheatCapacity Attributes;public CheatReal HardCap=300;public CheatReal ActiveCap=7500;public CheatReal Amount;
  public void SetCurrentAmount(CheatReal amount){Amount=amount<ActiveCap?amount:ActiveCap;}
  public CheatInventory(string name){Attributes=new CheatCapacity{Inventory=new CheatReference{Asset=new CheatAsset{Name=name}}};}
 }
@@ -52,12 +52,45 @@ public static class CheatTests {
   Check(CflRuntime.ExecuteMoney(money),"Money sim command missing");Check(store.InventoryManager.Inventories[0].Amount.Value==9999 && store.InventoryManager.Inventories[1].Amount.Value==9999 && store.InventoryManager.Inventories[2].Amount.Value==0,"Money must set both resources above cap and leave population untouched");
   Check(!CflRuntime.ExecuteMoney(new CheatCommand{ScriptToRun="ordinary lua"}),"Non-cheat script consumed");
   panel.mInputField.text="speed";CflRuntime.TryCheat(panel);string speed=ui.MissionDataSource.mCommandScheduler.Commands[1].ScriptToRun;
-  Check(speed.Contains("commanders[4]") && speed.Contains("if not __cflProduction10[3]") && speed.Contains("ba_campaign_cvs_test_object_m07_production_rate"),"Speed must target actual local slot and avoid stacking");
+  var sim=new CheatSimulation();var speedCommand=ui.MissionDataSource.mCommandScheduler.Commands[1];
+  Check(CflRuntime.ExecuteCheat(speedCommand,sim),"Speed command not executed");CflRuntime.ExecuteCheat(speedCommand,sim);
+  var owned=sim.Owners[speedCommand.Owner];Check(owned.Count==2,"Repeated speed accumulated buffs");
+  foreach(var buff in owned.Values)Check(buff.IntValue==100 && buff.ApplyToChildren && buff.Mode==2,"Production/construction must inherit exact x100 multiplier");
+  Check(sim.mAttributeDatabase.Buffs["ba_campaign_cvs_test_object_m07_production_rate"].IntValue==10,"Authored asset modified");
+  panel.mInputField.text="pop";CflRuntime.TryCheat(panel);var pop=ui.MissionDataSource.mCommandScheduler.Commands[2];
+  store.InventoryManager.Inventories[2].Amount=42;CflRuntime.ExecuteCheat(pop,sim);
+  Check(store.InventoryManager.Inventories[2].ActiveCap.Value==300 && store.InventoryManager.Inventories[2].Amount.Value==42,"Pop must maximize capacity without changing used population");
+  CflRuntime.ExecuteCheat(pop,sim);Check(sim.Owners[pop.Owner].Count==3,"Pop repeated command stacked");
+  Check(!CflRuntime.ExecuteCheat(new CheatCommand{ScriptToRun="normal Lua"},sim),"Normal script swallowed");
   int before=ui.MissionDataSource.mCommandScheduler.Commands.Count;
   ui.MatchPlayerSlotDataSource.Slots.Add(new CheatSlot());panel.mInputField.text="money";CflRuntime.TryCheat(panel);Check(ui.MissionDataSource.mCommandScheduler.Commands.Count==before,"Multiplayer cheat accepted");ui.MatchPlayerSlotDataSource.Slots.RemoveAt(3);
   foreach(string mode in new[]{"replay","observer","automatch"}){typeof(CheatMatch).GetField(mode).SetValue(ui.MatchDataSource,true);panel.mInputField.text="speed";CflRuntime.TryCheat(panel);Check(ui.MissionDataSource.mCommandScheduler.Commands.Count==before,"Forbidden mode accepted: "+mode);typeof(CheatMatch).GetField(mode).SetValue(ui.MatchDataSource,false);}
   var watcher=new CheatSlot{Type="Observer"};ui.MatchPlayerSlotDataSource.Slots.Add(watcher);panel.mInputField.text="money";CflRuntime.TryCheat(panel);Check(ui.MissionDataSource.mCommandScheduler.Commands.Count==before,"Remote observer accepted");ui.MatchPlayerSlotDataSource.Slots.Remove(watcher);
   ui.MatchPlayerSlotDataSource.valid=false;panel.mInputField.text="money";CflRuntime.TryCheat(panel);Check(ui.MissionDataSource.mCommandScheduler.Commands.Count==before,"Missing match metadata accepted");
-  Console.WriteLine("PASS: Enter cheat dispatch, exact resource amounts above cap, population unchanged, local slot selection, normal chat preserved, multiplayer/replay/observer/automatch/unknown match rejected.");
+  Console.WriteLine("PASS: Enter money/speed/pop dispatch, resource cap, production/construction x100 without stacking, original buffs unchanged, max population capacity with used population preserved, normal chat preserved, multiplayer/replay/observer/automatch/unknown match rejected.");
  }
 }
+namespace Carbon.Core.Numerics.Q64 {public struct Real {
+ public int Value;public static Real FromInt(int n){return new Real{Value=n};}public static int IntValue(Real n){return n.Value;}
+}}
+public struct CheatBuffID {public ulong value;public CheatBuffID(ulong n){value=n;}}
+namespace Carbon.Simulation.Data {public class BuffAttributes {
+ public string Name;public CheatBuffID ID;public object Value;public int IntValue;public bool ApplyToChildren;public int Mode;
+}}
+public enum CheatOperation{Add,Remove}
+public class CheatDatabase {
+ public Dictionary<string,Carbon.Simulation.Data.BuffAttributes> Buffs=new Dictionary<string,Carbon.Simulation.Data.BuffAttributes>();
+ public object GetObject(string name){Carbon.Simulation.Data.BuffAttributes value;return Buffs.TryGetValue(name,out value)?value:null;}
+ public void AddObject(Carbon.Simulation.Data.BuffAttributes buff,bool load){Buffs.Add(buff.Name,buff);}
+ public CheatDatabase(){int id=1;foreach(string name in new[]{"ba_campaign_cvs_test_object_m07_production_rate","ba_campaign_production_time_fast","ba_pop_increase_200"})Buffs.Add(name,new Carbon.Simulation.Data.BuffAttributes{Name=name,ID=new CheatBuffID((ulong)id++),Value=Carbon.Core.Numerics.Q64.Real.FromInt(10),IntValue=10,Mode=name=="ba_pop_increase_200"?3:2});}
+}
+public class CheatSimulation {
+ public CheatDatabase mAttributeDatabase=new CheatDatabase();
+ public Dictionary<object,Dictionary<string,Carbon.Simulation.Data.BuffAttributes>> Owners=new Dictionary<object,Dictionary<string,Carbon.Simulation.Data.BuffAttributes>>();
+}
+namespace Carbon.Simulation {public static class ModifyBuffAction {
+ public static void Execute(object owner,Data.BuffAttributes[] buffs,CheatOperation operation,object simulation,bool immediate){
+  var sim=(CheatSimulation)simulation;if(!sim.Owners.ContainsKey(owner))sim.Owners.Add(owner,new Dictionary<string,Data.BuffAttributes>());
+  foreach(var buff in buffs)if(operation==CheatOperation.Remove)sim.Owners[owner].Remove(buff.Name);else sim.Owners[owner].Add(buff.Name,buff);
+ }
+}}

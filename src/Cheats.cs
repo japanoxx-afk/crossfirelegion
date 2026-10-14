@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 public static partial class CflRuntime {
+ const string SpeedCommand="-- CFL_SINGLE_PLAYER_SPEED100_V1",PopCommand="-- CFL_SINGLE_PLAYER_POP_V1";
  const string MoneyCommand="-- CFL_SINGLE_PLAYER_MONEY_V1";
  static object Call(object target,string name,params object[] args){return target.GetType().GetMethod(name,Flags).Invoke(target,args);}
  static object UI(){return TypeByName("Game.Common.UI.GameUIBase").GetProperty("Instance",BindingFlags.Public|BindingFlags.Static).GetValue(null,null);}
@@ -37,31 +38,65 @@ public static partial class CflRuntime {
  }
  public static bool TryCheat(object panel){
   object input=Get(panel,"mInputField");string code=((string)Get(input,"text")??String.Empty).Trim().ToLowerInvariant();
-  if(code!="money" && code!="speed")return false;
+  if(code!="money" && code!="speed" && code!="pop")return false;
   Set(input,"text",String.Empty);
   object ui=null;
   try{
    ui=UI();int slot=CheatSlot(ui);
    if(slot<0){CheatNotice(ui,"싱글플레이에서만 사용할 수 있습니다.");return true;}
    object scheduler=Get(Get(ui,"MissionDataSource"),"mCommandScheduler"),owner=Get(scheduler,"LocalSimCommander");
-   string script=code=="money"?MoneyCommand:SpeedScript(slot);
+   string script=code=="money"?MoneyCommand:code=="speed"?SpeedCommand:PopCommand;
    object command=TypeByName("Carbon.Simulation.SimCommandFactory").GetMethod("CreateExecuteScriptCommand",BindingFlags.Public|BindingFlags.Static).Invoke(null,new[]{owner,script});
    if(!(bool)Call(scheduler,"ScheduleCommand",command))throw new InvalidOperationException("Cheat command was not scheduled");
-   CheatNotice(ui,code=="money"?"money: 자원 9999 설정 명령 접수":"speed: 생산 속도 10배 명령 접수 (중첩 없음)");
+   CheatNotice(ui,code=="money"?"money: 자원 9999 설정 명령 접수":code=="speed"?"speed: 생산·건설 속도 100배 명령 접수 (중첩 없음)":"pop: 최대 생산 인구 한도 명령 접수");
   }catch(Exception e){Log(e);if(ui!=null)CheatNotice(ui,"Cheat failed; see Player.log.");}
   return true;
  }
- static string SpeedScript(int slot){
-  // Session-local Lua state resets with each match. No user text enters the script.
-  return "local c = commanders["+(slot+1).ToString(System.Globalization.CultureInfo.InvariantCulture)+"]\n"+
-   "assert(c, 'CFL: missing commander')\n"+
-   "__cflProduction10 = __cflProduction10 or {}\n"+
-   "if not __cflProduction10["+slot+"] then\n"+
-   " local b = assets.GetCarbonAssetByName('ba_campaign_cvs_test_object_m07_production_rate', assetTypes.BuffAttributes)\n"+
-   " assert(b, 'CFL: missing production buff')\n"+
-   " actions.ModifyBuff(c, b, modificationOperation.Add)\n"+
-   " __cflProduction10["+slot+"] = true\nend";
+ // Custom buffs are cloned and registered under distinct IDs, never modifying authored assets.
+ static object Real(int value){return TypeByName("Carbon.Core.Numerics.Q64.Real").GetMethod("FromInt",BindingFlags.Public|BindingFlags.Static).Invoke(null,new object[]{value});}
+ static object Attribute(object database,string name){
+  foreach(var method in database.GetType().GetMethods(Flags))if(method.Name=="GetObject" && !method.IsGenericMethod && method.GetParameters().Length==1 && method.GetParameters()[0].ParameterType==typeof(string))return method.Invoke(database,new object[]{name});
+  throw new MissingMethodException("AttributeDatabase.GetObject(string)");
  }
+ static object CustomBuff(object database,string template,string name,ulong id,object value,bool children){
+  object existing=Attribute(database,name);if(existing!=null){Set(existing,"Value",value);Set(existing,"IntValue",(int)value.GetType().GetMethod("IntValue",BindingFlags.Public|BindingFlags.Static).Invoke(null,new[]{value}));return existing;}
+  object original=Attribute(database,template);if(original==null)throw new InvalidOperationException("Missing buff: "+template);
+  object buff=typeof(object).GetMethod("MemberwiseClone",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(original,null);
+  Set(buff,"Name",name);Set(buff,"ID",Activator.CreateInstance(Get(buff,"ID").GetType(),new object[]{id}));
+  Set(buff,"Value",value);Set(buff,"IntValue",(int)value.GetType().GetMethod("IntValue",BindingFlags.Public|BindingFlags.Static).Invoke(null,new[]{value}));Set(buff,"ApplyToChildren",children);
+  Call(database,"AddObject",buff,false);return buff;
+ }
+ static void ApplyCheatBuffs(object owner,object simulation,params object[] buffs){
+  var type=TypeByName("Carbon.Simulation.Data.BuffAttributes");Array array=Array.CreateInstance(type,buffs.Length);for(int i=0;i<buffs.Length;i++)array.SetValue(buffs[i],i);
+  var execute=TypeByName("Carbon.Simulation.ModifyBuffAction").GetMethod("Execute",BindingFlags.Public|BindingFlags.Static);
+  var operation=execute.GetParameters()[2].ParameterType;
+  // Remove then add the same custom IDs so repeated commands never accumulate multipliers.
+  foreach(string name in new[]{"Remove","Add"})execute.Invoke(null,new object[]{owner,array,Enum.Parse(operation,name),simulation,false});
+ }
+ public static bool ExecuteCheat(object command,object simulation){
+  string code=(string)Get(command,"ScriptToRun");if(code==MoneyCommand)return ExecuteMoney(command);
+  if(code!=SpeedCommand && code!=PopCommand)return false;
+  try{
+   object database=Get(simulation,"mAttributeDatabase"),owner=Get(command,"Owner");
+   if(code==SpeedCommand){
+    var production=CustomBuff(database,"ba_campaign_cvs_test_object_m07_production_rate","cfl_production100_v1",0x43464c0000000101UL,Real(100),true);
+    var construction=CustomBuff(database,"ba_campaign_production_time_fast","cfl_construction100_v1",0x43464c0000000102UL,Real(100),true);
+    ApplyCheatBuffs(owner,simulation,production,construction);
+   }else{
+    var helper=TypeByName("Carbon.Simulation.StoreHelper`1").MakeGenericType(TypeByName("Carbon.Simulation.Sim"));
+    object store=helper.GetMethod("GetOrAddStoreComponent",BindingFlags.Public|BindingFlags.Static).Invoke(null,new[]{owner});
+    foreach(object inventory in (IEnumerable)Get(Get(Get(store,"InventoryManager"),"Inventories"),"Values")){
+     if((string)Get(Resolve(Get(Get(inventory,"Attributes"),"Inventory")),"Name")!="ia_population")continue;
+     object limit=Get(inventory,"HardCap");
+     var buff=CustomBuff(database,"ba_pop_increase_200","cfl_population_max_v1",0x43464c0000000103UL,limit,false);
+     ApplyCheatBuffs(owner,simulation,buff);Set(inventory,"ActiveCap",limit);return true;
+    }
+    throw new InvalidOperationException("Missing population inventory");
+   }
+  }catch(Exception e){Log(e);}
+  return true;
+ }
+
  // Runs on the simulation command path, never directly from the presentation thread.
  public static bool ExecuteMoney(object command){
   if((string)Get(command,"ScriptToRun")!=MoneyCommand)return false;

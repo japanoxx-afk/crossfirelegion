@@ -26,7 +26,7 @@ public static class SelfTest {
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
     var execute=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.ExecuteScriptCommand").Methods.Single(method=>method.Name=="Execute");
-    Require(execute.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::ExecuteMoney")),"시뮬레이션 자원 치트 후크");
+    Require(execute.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::ExecuteCheat")),"시뮬레이션 자원 치트 후크");
     var fill=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.RosterHelper").Methods.Single(m=>m.Name=="FillRosterScratchpadForCategory");
     Require(fill.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::FillAll")),"전체 진영 유닛 등록");
     var check=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.SimRequirementValidator").Methods.Single(m=>m.Name=="SatisfiesRosterRequirement");

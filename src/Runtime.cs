@@ -45,7 +45,7 @@ public static partial class CflRuntime {
   object parent=Get(Get(list,"transform"),"parent");
   return parent!=null && Component(parent,panel)!=null;
  }
- class Layout {public object Panel,Grid,EmptyGrid,Position,Viewport;public float CellX,CellY,SpacingX,SpacingY;public int Left,Right,Top,Bottom;}
+ class Layout {public object Panel,Grid,EmptyGrid,Position,Viewport,Scale;public float CellX,CellY,SpacingX,SpacingY;public int Left,Right,Top,Bottom;}
  static readonly Dictionary<object,Layout> layouts=new Dictionary<object,Layout>();
  static int visibleButtons;
  public static void BeforeList(object list){try{if(IsCommandList(list)){Field(list.GetType(),"m_MaxItems").SetValue(list,Slots);var invalid=Field(list.GetType(),"m_InvalidDataBehavior");invalid.SetValue(list,Enum.ToObject(invalid.FieldType,0));}}catch(Exception e){Log(e);}}
@@ -56,8 +56,9 @@ public static partial class CflRuntime {
   if(!layouts.ContainsKey(list)){
    object panel=Get(transform,"parent"),cell=Get(group,"cellSize"),spacing=Get(group,"spacing"),padding=Get(group,"padding");
    object empty=panel.GetType().GetMethod("Find",new[]{typeof(string)}).Invoke(panel,new object[]{"StaticElements/EmptyGrid"});
-   layouts[list]=new Layout{Panel=panel,Grid=group,EmptyGrid=empty,Position=Get(panel,"anchoredPosition"),Viewport=Get(panel,"parent"),CellX=(float)Get(cell,"x"),CellY=(float)Get(cell,"y"),SpacingX=(float)Get(spacing,"x"),SpacingY=(float)Get(spacing,"y"),Left=(int)Get(padding,"left"),Right=(int)Get(padding,"right"),Top=(int)Get(padding,"top"),Bottom=(int)Get(padding,"bottom")};
+   layouts[list]=new Layout{Panel=panel,Grid=group,EmptyGrid=empty,Position=Get(panel,"anchoredPosition"),Viewport=Get(panel,"parent"),Scale=Get(panel,"localScale"),CellX=(float)Get(cell,"x"),CellY=(float)Get(cell,"y"),SpacingX=(float)Get(spacing,"x"),SpacingY=(float)Get(spacing,"y"),Left=(int)Get(padding,"left"),Right=(int)Get(padding,"right"),Top=(int)Get(padding,"top"),Bottom=(int)Get(padding,"bottom")};
   }
+  HideCommandFrame();
   ApplyLayout(layouts[list],visibleButtons);
   Log("Native command grid registered; capacity 64; button transforms preserved");
  }catch(Exception e){Log(e);}}
@@ -74,20 +75,24 @@ public static partial class CflRuntime {
    i++;
   }
  }catch(Exception e){Log(e);}}
+ // Hide only the decorative command-area sprite; selection portrait and hotkeys are separate images.
+ public static void HideCommandFrame(){
+  var images=TypeByName("UnityEngine.UI.Image");var resources=TypeByName("UnityEngine.Resources");if(images==null || resources==null)return;
+  var find=resources.GetMethod("FindObjectsOfTypeAll",BindingFlags.Public|BindingFlags.Static,null,new[]{typeof(Type)},null);
+  foreach(object image in (IEnumerable)find.Invoke(null,new object[]{images})){
+   object sprite=Get(image,"sprite");if(sprite!=null && (string)Get(sprite,"name")=="ui_hud_command_ability_BG")Set(image,"enabled",false);
+  }
+ }
  static void ApplyLayout(Layout layout,int count){
   float x=(float)Get(layout.Position,"x"),y=(float)Get(layout.Position,"y");
-  float nativeHeight=3*layout.CellY+2*layout.SpacingY+layout.Top+layout.Bottom;
-  // Lift the WHOLE expanded grid past the lower HUD, including its hotkey strip/frame.
-  // Previously only wide grids were lifted, and only past the button area.
-  if(count>12)y+=nativeHeight+layout.CellY+layout.SpacingY+16;
   float viewportWidth=1920,viewportHeight=1080;
   if(layout.Viewport!=null){object rect=Get(layout.Viewport,"rect");float w=(float)Get(rect,"width"),h=(float)Get(rect,"height");if(w>0 && h>0){viewportWidth=w;viewportHeight=h;}}
-  int columns=count>32?8:4,rows=Math.Max(3,(count+columns-1)/columns);
-  int maxColumns=Math.Max(4,(int)Math.Floor((viewportWidth-16-Math.Abs(x)-layout.Left-layout.Right+layout.SpacingX)/(layout.CellX+layout.SpacingX)));
-  while(count>12 && rows*layout.CellY+(rows-1)*layout.SpacingY+layout.Top+layout.Bottom>viewportHeight-y-32 && columns<maxColumns){columns=Math.Min(columns+4,maxColumns);rows=Math.Max(3,(count+columns-1)/columns);}
+  int columns=4,rows=Math.Max(3,(count+columns-1)/columns);
   float width=columns*layout.CellX+(columns-1)*layout.SpacingX+layout.Left+layout.Right;
   float height=rows*layout.CellY+(rows-1)*layout.SpacingY+layout.Top+layout.Bottom;
   Set(layout.Grid,"enabled",true);var constraint=layout.Grid.GetType().GetProperty("constraint");constraint.SetValue(layout.Grid,Enum.ToObject(constraint.PropertyType,1),null);Set(layout.Grid,"constraintCount",columns);
+  float scale=Math.Min(1f,Math.Min((viewportHeight-y-16)/height,(viewportWidth-Math.Abs(x)-16)/width));
+  Set(layout.Panel,"localScale",Activator.CreateInstance(TypeByName("UnityEngine.Vector3"),new object[]{(float)Get(layout.Scale,"x")*scale,(float)Get(layout.Scale,"y")*scale,(float)Get(layout.Scale,"z")}));
   Set(layout.Panel,"sizeDelta",Vector(width,height));
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}

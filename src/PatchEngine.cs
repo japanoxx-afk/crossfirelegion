@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=6;
+ public const int Revision=7;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -29,13 +29,13 @@ public static class Patcher {
  static void Intercept(MethodDefinition target,MethodReference hook){
   hook.ReturnType=target.Module.TypeSystem.Boolean;
   var il=target.Body.GetILProcessor();var first=target.Body.Instructions[0];
-  il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_0));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));
+  il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_0));if(hook.Parameters.Count==2)il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_1));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));
   il.InsertBefore(first,Instruction.Create(OpCodes.Brfalse,first));il.InsertBefore(first,Instruction.Create(OpCodes.Ret));
  }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
   if(name=="Carbon.Simulation.dll"){
-   Intercept(Find(a,"Carbon.Simulation.ExecuteScriptCommand","Execute"),Hook(module,"ExecuteMoney",1));
+   Intercept(Find(a,"Carbon.Simulation.ExecuteScriptCommand","Execute"),Hook(module,"ExecuteCheat",2));
    var fill=Find(a,"Carbon.Simulation.RosterHelper","FillRosterScratchpadForCategory");
    if(!fill.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterSlotAttributes::get_Items")))throw new Exception("지원하지 않는 진영 유닛 등록 코드");
    Body(fill,Instruction.Create(OpCodes.Ldarg_0),Instruction.Create(OpCodes.Ldarg_2),Instruction.Create(OpCodes.Call,Hook(module,"FillAll",2)),Instruction.Create(OpCodes.Ret));
