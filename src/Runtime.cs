@@ -28,34 +28,44 @@ public static class CflRuntime {
     buttons.SetValue(button,next++);
    }
   }
+  visibleButtons=next;
+  foreach(var list in new List<object>(layouts.Keys)){try{ApplyLayout(layouts[list],next);}catch(Exception e){layouts.Remove(list);Log(e);}}
  }
  static Type TypeByName(string name){foreach(var a in AppDomain.CurrentDomain.GetAssemblies()){var t=a.GetType(name);if(t!=null)return t;}return null;}
  static object Vector(float x,float y){return Activator.CreateInstance(TypeByName("UnityEngine.Vector2"),new object[]{x,y});}
  static object Component(object value,Type type){return value.GetType().GetMethod("GetComponent",new[]{typeof(Type)}).Invoke(value,new object[]{type});}
  static bool IsCommandList(object list){
   var panel=TypeByName("Game.UI.CommandPanel");if(panel==null)return false;
-  return list.GetType().GetMethod("GetComponentInParent",new[]{typeof(Type)}).Invoke(list,new object[]{panel})!=null;
+  // Only the command grid directly owned by CommandPanel, never tooltips or nested lists.
+  object parent=Get(Get(list,"transform"),"parent");
+  return parent!=null && Component(parent,panel)!=null;
  }
- public static void BeforeList(object list){try{if(IsCommandList(list))Field(list.GetType(),"m_MaxItems").SetValue(list,Slots);}catch(Exception e){Log(e);}}
+ class Layout {public object Panel,Grid,EmptyGrid,Position;public float CellX,CellY,SpacingX,SpacingY;public int Left,Right,Top,Bottom;}
+ static readonly Dictionary<object,Layout> layouts=new Dictionary<object,Layout>();
+ static int visibleButtons;
+ public static void BeforeList(object list){try{if(IsCommandList(list)){Field(list.GetType(),"m_MaxItems").SetValue(list,Slots);var invalid=Field(list.GetType(),"m_InvalidDataBehavior");invalid.SetValue(list,Enum.ToObject(invalid.FieldType,0));}}catch(Exception e){Log(e);}}
  public static void AfterList(object list){try{
   if(!IsCommandList(list))return;
   object transform=Get(list,"transform");
-  var layout=TypeByName("UnityEngine.UI.LayoutGroup");object group=Component(list,layout);if(group!=null)Set(group,"enabled",false);
-  // Reuse the game's native clickable items, events, and tooltips.
-  Set(transform,"anchorMin",Vector(1,0));Set(transform,"anchorMax",Vector(1,0));Set(transform,"pivot",Vector(1,0));
-  Set(transform,"sizeDelta",Vector(480,480));Set(transform,"anchoredPosition",Vector(-8,8));
-  object clippingNode=list;for(int depth=0;depth<2 && clippingNode!=null;depth++){
-   foreach(string name in new[]{"UnityEngine.UI.Mask","UnityEngine.UI.RectMask2D"}){var type=TypeByName(name);if(type==null)continue;object mask=Component(clippingNode,type);if(mask!=null)Set(mask,"enabled",false);}
-   object nodeTransform=Get(clippingNode,"transform");clippingNode=Get(nodeTransform,"parent");
+  object group=Component(list,TypeByName("UnityEngine.UI.GridLayoutGroup"));if(group==null)return;
+  if(!layouts.ContainsKey(list)){
+   object panel=Get(transform,"parent"),cell=Get(group,"cellSize"),spacing=Get(group,"spacing"),padding=Get(group,"padding");
+   object empty=panel.GetType().GetMethod("Find",new[]{typeof(string)}).Invoke(panel,new object[]{"StaticElements/EmptyGrid"});
+   layouts[list]=new Layout{Panel=panel,Grid=group,EmptyGrid=empty,Position=Get(panel,"anchoredPosition"),CellX=(float)Get(cell,"x"),CellY=(float)Get(cell,"y"),SpacingX=(float)Get(spacing,"x"),SpacingY=(float)Get(spacing,"y"),Left=(int)Get(padding,"left"),Right=(int)Get(padding,"right"),Top=(int)Get(padding,"top"),Bottom=(int)Get(padding,"bottom")};
   }
-  int i=0;foreach(object item in (IEnumerable)Get(list,"ListItems")){
-   object t=Get(item,"transform");Set(t,"anchorMin",Vector(0,1));Set(t,"anchorMax",Vector(0,1));Set(t,"pivot",Vector(0,1));
-   object rect=Get(t,"rect");float w=(float)Get(rect,"width"),h=(float)Get(rect,"height");
-   if(w<=0)w=80;if(h<=0)h=80;
-   Set(t,"localScale",Activator.CreateInstance(TypeByName("UnityEngine.Vector3"),new object[]{58/w,58/h,1f}));
-   Set(t,"anchoredPosition",Vector((i%8)*60,-(i/8)*60));i++;
-  }
-  Log("64-slot command HUD configured");
+  ApplyLayout(layouts[list],visibleButtons);
+  Log("Native command grid registered; capacity 64; button transforms preserved");
  }catch(Exception e){Log(e);}}
+ static void ApplyLayout(Layout layout,int count){
+  int columns=count>32?8:4,rows=Math.Max(3,(count+columns-1)/columns);
+  float width=columns*layout.CellX+(columns-1)*layout.SpacingX+layout.Left+layout.Right;
+  float height=rows*layout.CellY+(rows-1)*layout.SpacingY+layout.Top+layout.Bottom;
+  Set(layout.Grid,"enabled",true);var constraint=layout.Grid.GetType().GetProperty("constraint");constraint.SetValue(layout.Grid,Enum.ToObject(constraint.PropertyType,1),null);Set(layout.Grid,"constraintCount",columns);
+  Set(layout.Panel,"sizeDelta",Vector(width,height));
+  float x=(float)Get(layout.Position,"x"),y=(float)Get(layout.Position,"y");
+  if(columns>4)y+=3*layout.CellY+2*layout.SpacingY+layout.Top+layout.Bottom+8;
+  Set(layout.Panel,"anchoredPosition",Vector(x,y));
+  if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
+ }
  static void Log(object message){var debug=TypeByName("UnityEngine.Debug");if(debug!=null)debug.GetMethod("Log",new[]{typeof(object)}).Invoke(null,new[]{(object)("[CFL All Units] "+message)});}
 }

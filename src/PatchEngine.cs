@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=2;
+ public const int Revision=3;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -19,7 +19,7 @@ public static class Patcher {
  static string State(string game){return Path.Combine(Managed(game),"CflMod.state.json");}
  static MethodDefinition Find(AssemblyDefinition a,string type,string name){return a.MainModule.Types.Single(t=>t.FullName==type).Methods.Single(m=>m.Name==name);}
  public static string Status(string game){
-  if(File.Exists(State(game))){var s=Json.Deserialize<PatchSet>(File.ReadAllText(State(game)));return s.Revision==Revision && s.Files.All(f=>File.Exists(Path.Combine(Managed(game),f.Name))&&Hash(Path.Combine(Managed(game),f.Name))==f.PatchedHash)?"전체 유닛 등록 + 생산 HUD 64칸 적용됨":"패치 파일 변경 또는 복구 필요";}
+  if(File.Exists(State(game))){var s=Json.Deserialize<PatchSet>(File.ReadAllText(State(game)));bool valid=s.Files.All(f=>File.Exists(Path.Combine(Managed(game),f.Name))&&Hash(Path.Combine(Managed(game),f.Name))==f.PatchedHash);return !valid?"패치 파일 변경 또는 복구 필요":s.Revision==Revision?"전체 유닛 + 기본 레이아웃 자동 확장 HUD 적용됨":"이전 HUD 패치 · 적용 버튼으로 갱신하세요";}
   if(!File.Exists(Path.Combine(game,RelativeDll)))return "게임 경로를 확인하세요.";
   using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(game,RelativeDll)))return Find(a,"Carbon.Simulation.RosterHelper","IsAbilityInRoster").Body.Instructions.Count==2?"이전 표시 전용 패치 · 패치 적용으로 업그레이드하세요":"원본 상태 · 덱 제한 적용 중";
  }
@@ -58,7 +58,11 @@ public static class Patcher {
  }}}
  public static void Apply(string game){
   CheckStopped();string dir=Managed(game),statePath=State(game);
-  if(File.Exists(statePath))throw new Exception("이미 새 패치가 적용되었거나 복구가 필요합니다. 원본 복원 후 다시 적용하세요.");
+  if(File.Exists(statePath)){
+   var previous=Json.Deserialize<PatchSet>(File.ReadAllText(statePath));
+   if(previous.Revision<Revision && previous.Files.All(f=>File.Exists(Path.Combine(dir,f.Name))&&Hash(Path.Combine(dir,f.Name))==f.PatchedHash)){Restore(game);Apply(game);return;}
+   throw new Exception("이미 최신 패치가 적용되었거나 복구가 필요합니다. 원본 복원 후 다시 적용하세요.");
+  }
   var state=new PatchSet{Revision=Revision};var staged=new Dictionary<string,string>();
   string stage=Path.Combine(dir,".cfl-stage-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(stage);
   try{
