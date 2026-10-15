@@ -21,32 +21,33 @@ namespace UnityEngine {
  public static class Resources {public static UnityEngine.UI.Image[] Images;public static object FindObjectsOfTypeAll(Type t){return Images??new UnityEngine.UI.Image[0];}}
  public enum ThreadPriority {Low,BelowNormal,Normal,High}
  public static class Application {public static ThreadPriority backgroundLoadingPriority{get;set;}}
+ public static class Canvas {public static event Action willRenderCanvases;public static void Render(){if(willRenderCanvases!=null)willRenderCanvases();}}
  public static class Debug {public static void Log(object o){Console.WriteLine(o);}}
 }
 namespace UnityEngine.UI {
  public class Image {public UnityEngine.Sprite sprite;public bool enabled=true;public MockGameObject gameObject=new MockGameObject{active=true};}
+ public class ContentSizeFitter {public bool enabled=true;}
  public class LayoutGroup {public bool enabled=true;}
  public class Padding {public int left=10,right=10,top=12,bottom=12;}
  public enum Constraint {Flexible,FixedColumnCount,FixedRowCount}
- public class GridLayoutGroup:LayoutGroup {public UnityEngine.Vector2 cellSize=new UnityEngine.Vector2(68,68),spacing=new UnityEngine.Vector2(8,8);public Padding padding=new Padding();public Constraint constraint{get;set;}public int constraintCount{get;set;}}
+ public class GridLayoutGroup:LayoutGroup {public UnityEngine.Vector2 cellSize=new UnityEngine.Vector2(68,68),spacing=new UnityEngine.Vector2(8,8);public Padding padding=new Padding();public Constraint constraint{get;set;}int columns;public int layoutWrites;public int constraintCount{get{return columns;}set{columns=value;layoutWrites++;}}}
 }
 namespace Game.UI {public class CommandPanel {}}
-public class MockGameObject {public bool active;public void SetActive(bool value){active=value;}}
+public class MockGameObject {public bool active;public bool activeSelf{get{return active;}}public void SetActive(bool value){active=value;}}
 public class MockData {public bool HasValue{get;set;}}
 public class MockProvider {public MockData[] Data=new MockData[64];public MockData GetItemAtIndex(int index){return Data[index];}}
 public class MockUIItem {public MockGameObject gameObject=new MockGameObject();public UnityEngine.Transform transform=new UnityEngine.Transform();}
 public class MockList {
  public enum Invalid {Hide,ScaleZero}
  public int m_MaxItems=12;public Invalid m_InvalidDataBehavior=Invalid.ScaleZero;public UnityEngine.Transform transform=new UnityEngine.Transform{parent=new UnityEngine.Transform{hasPanel=true,anchoredPosition=new UnityEngine.Vector2(-6,12)}};public UnityEngine.UI.GridLayoutGroup layout=new UnityEngine.UI.GridLayoutGroup();public List<MockUIItem> ListItems=new List<MockUIItem>();
- public MockProvider DataProvider=new MockProvider();
- public object GetComponent(Type type){return layout;}
+ public UnityEngine.UI.ContentSizeFitter fitter=new UnityEngine.UI.ContentSizeFitter();public MockProvider DataProvider=new MockProvider();
+ public object GetComponent(Type type){return type==typeof(UnityEngine.UI.ContentSizeFitter)?(object)fitter:layout;}
 }
 class RuntimeTests {
  static void Check(bool value,string name){if(!value)throw new Exception(name);}
  static Entry Make(long id){return new Entry{Button=new Reference<Button>{Value=new Button{ID=id}}};}
  static int Main(string[] args){try{CheatTests.Run();
   UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
-  var frame=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_ability_BG"}};var portrait=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_BG"}};UnityEngine.Resources.Images=new[]{frame,portrait};CflRuntime.HideCommandFrame();Check(!frame.enabled && !frame.gameObject.active && portrait.enabled && portrait.gameObject.active,"Only production frame object should be hidden");frame.enabled=true;frame.gameObject.active=true;CflRuntime.EnforceHudFrame();Check(!frame.enabled && !frame.gameObject.active,"Native binding re-enabled production frame");
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
   var selection=new Selection();for(int i=0;i<25;i++)selection.mProductionButtonScratchpad.Add(Make(i));for(int i=25;i<45;i++)selection.mUpgradeButtonScratchpad.Add(Make(i));selection.mAbilityButtonScratchpad.Add(Make(45));selection.mAbilityButtonScratchpad.Add(Make(1));
@@ -63,6 +64,15 @@ class RuntimeTests {
   foreach(int count in new[]{13,17,24,32,33,46,64}){
    var production=new Selection();for(int i=0;i<count;i++)production.mProductionButtonScratchpad.Add(Make(1000+i));
    CflRuntime.Pack(production,new Button[64]);var panel=list.transform.parent;
+   int rows=(count+3)/4;for(int i=0;i<count;i++){list.ListItems[i].transform.pivot=new UnityEngine.Vector2(.5f,.5f);list.ListItems[i].transform.anchoredPosition=new UnityEngine.Vector2(44+(i%4)*76,-12-(i/4)*76-34);}
+   UnityEngine.Canvas.Render();
+   float topY=list.ListItems[0].transform.anchoredPosition.y;Check(topY==-46,"Overflow row must retain native top position");
+   int split=(rows-3)*4;Check(list.ListItems[split].transform.anchoredPosition.y==-46-(rows-3)*76-36,"Fourth row separation missing");
+   float bottomY=list.ListItems[(rows-1)*4].transform.anchoredPosition.y;
+   Check(Math.Abs(panel.sizeDelta.y+bottomY-46)<.01f,"Bottom three rows moved when adding overflow gap");
+   Check(!list.fitter.enabled,"Content fitter would remove the reserved gap");
+   int writes=list.layout.layoutWrites;CflRuntime.Pack(production,new Button[64]);UnityEngine.Canvas.Render();Check(list.layout.layoutWrites==writes,"Unchanged selection rebuilt the grid");
+   list.ListItems[split].transform.anchoredPosition=new UnityEngine.Vector2(44,-46-(rows-3)*76);UnityEngine.Canvas.Render();Check(list.ListItems[split].transform.anchoredPosition.y==-46-(rows-3)*76-36,"A native grid rebuild lost the reserved gap");
    Check(panel.anchoredPosition.y==12 && panel.anchoredPosition.x==-6,"Expanded grid must stay bottom anchored: "+count);
    Check(panel.anchoredPosition.y+panel.sizeDelta.y*panel.localScale.y<=1064,"Expanded grid exceeded top safe margin: "+count);
    Check(panel.sizeDelta.x+6<=1904,"Expanded grid exceeded left safe margin: "+count);
@@ -83,7 +93,7 @@ class RuntimeTests {
   CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
   list.transform.parent.anchorMin=new UnityEngine.Vector2(0,1);list.transform.parent.anchoredPosition=new UnityEngine.Vector2(50,348);CflRuntime.AfterRefresh(list);Check(list.transform.parent.anchorMin.x==1 && list.transform.parent.anchorMin.y==0 && list.transform.parent.anchoredPosition.y==12,"Native UI updates must not move production away from bottom HUD");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
-  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
+  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}

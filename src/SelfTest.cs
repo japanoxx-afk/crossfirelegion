@@ -42,7 +42,7 @@ public static class SelfTest {
     Require(!check.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("get_CheckRosterIndex")),"슬롯 위치 제한 제거");
    }
    using(var a=AssemblyDefinition.ReadAssembly(ui)){
-    Require(a.MainModule.Types.Single(t=>t.FullName=="Game.UI.CommandPanel").Methods.Single(m=>m.Name=="LateUpdate").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::EnforceHudFrame")),"생산창 장식 렌더링 방지 후크");
+    Require(!a.MainModule.Types.Single(t=>t.FullName=="Game.UI.CommandPanel").Methods.Any(m=>m.Name=="LateUpdate"),"매 프레임 테두리 검색 제거");
     var chat=a.MainModule.Types.Single(t=>t.FullName=="Game.UI.HUDChatPanel");
     Require(chat.Methods.Single(m=>m.Name=="SendMessage").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::TryCheat")),"채팅 치트 후크");
     Require(!chat.Methods.Single(m=>m.Name=="Update").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("mIsCampaign")),"캠페인 Enter 입력 경로");

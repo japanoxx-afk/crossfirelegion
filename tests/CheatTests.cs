@@ -74,15 +74,16 @@ namespace Carbon.Core.Numerics.Q64 {public struct Real {
  public int Value;public static Real FromInt(int n){return new Real{Value=n};}public static int IntValue(Real n){return n.Value;}
 }}
 public struct CheatBuffID {public ulong value;public CheatBuffID(ulong n){value=n;}}
-namespace Carbon.Simulation.Data {public class BuffAttributes {
- public string Name;public CheatBuffID ID;public object Value;public int IntValue;public bool ApplyToChildren;public int Mode;
+public class CheatBuffBase {public CheatBuffID ID{get;private set;}public CheatBuffID _ID{set{ID=value;}}}
+namespace Carbon.Simulation.Data {public class BuffAttributes:CheatBuffBase {
+ public string Name;public object Value;public int IntValue;public bool ApplyToChildren;public int Mode;
 }}
 public enum CheatOperation{Add,Remove}
 public class CheatDatabase {
  public Dictionary<string,Carbon.Simulation.Data.BuffAttributes> Buffs=new Dictionary<string,Carbon.Simulation.Data.BuffAttributes>();
  public object GetObject(string name){Carbon.Simulation.Data.BuffAttributes value;return Buffs.TryGetValue(name,out value)?value:null;}
  public void AddObject(Carbon.Simulation.Data.BuffAttributes buff,bool load){Buffs.Add(buff.Name,buff);}
- public CheatDatabase(){int id=1;foreach(string name in new[]{"ba_campaign_cvs_test_object_m07_production_rate","ba_campaign_production_time_fast","ba_pop_increase_200"})Buffs.Add(name,new Carbon.Simulation.Data.BuffAttributes{Name=name,ID=new CheatBuffID((ulong)id++),Value=Carbon.Core.Numerics.Q64.Real.FromInt(10),IntValue=10,Mode=name=="ba_pop_increase_200"?3:2});}
+ public CheatDatabase(){int id=1;foreach(string name in new[]{"ba_campaign_cvs_test_object_m07_production_rate","ba_campaign_production_time_fast","ba_pop_increase_200"})Buffs.Add(name,new Carbon.Simulation.Data.BuffAttributes{Name=name,_ID=new CheatBuffID((ulong)id++),Value=Carbon.Core.Numerics.Q64.Real.FromInt(10),IntValue=10,Mode=name=="ba_pop_increase_200"?3:2});}
 }
 public class CheatSimulation {
  public CheatDatabase mAttributeDatabase=new CheatDatabase();

@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=10;
+ public const int Revision=11;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -24,7 +24,13 @@ public static class Patcher {
   using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(game,RelativeDll)))return Find(a,"Carbon.Simulation.RosterHelper","IsAbilityInRoster").Body.Instructions.Count==2?"이전 표시 전용 패치 · 패치 적용으로 업그레이드하세요":"원본 상태 · 덱 제한 적용 중";
  }
  public static bool NeedsUpgrade(string game){return File.Exists(State(game)) && Json.Deserialize<PatchSet>(File.ReadAllText(State(game))).Revision<Revision;}
- static void CheckStopped(){if(System.Diagnostics.Process.GetProcessesByName("Crossfire_Legion").Length!=0)throw new Exception("게임을 종료한 후 다시 시도하세요.");}
+ static void CheckStopped(string game){
+  string target=Path.GetFullPath(game).TrimEnd(Path.DirectorySeparatorChar);
+  foreach(var process in System.Diagnostics.Process.GetProcessesByName("Crossfire_Legion"))using(process){
+   string executable;try{executable=process.MainModule.FileName;}catch{throw new Exception("실행 중인 게임 경로를 확인할 수 없습니다. 게임을 종료한 후 다시 시도하세요.");}
+   if(String.Equals(Path.GetDirectoryName(executable).TrimEnd(Path.DirectorySeparatorChar),target,StringComparison.OrdinalIgnoreCase))throw new Exception("게임을 종료한 후 다시 시도하세요.");
+  }
+ }
  static void Body(MethodDefinition m,params Instruction[] instructions){m.Body.Instructions.Clear();m.Body.ExceptionHandlers.Clear();m.Body.Variables.Clear();m.Body.InitLocals=false;foreach(var i in instructions)m.Body.Instructions.Add(i);}
  static MethodReference Hook(ModuleDefinition module,string method,int count){var scope=module.AssemblyReferences.FirstOrDefault(r=>r.Name=="CflRuntime");if(scope==null){scope=new AssemblyNameReference("CflRuntime",new Version(0,2,0,0));module.AssemblyReferences.Add(scope);}var m=new MethodReference(method,module.TypeSystem.Void,new TypeReference("","CflRuntime",module,scope)){HasThis=false};for(int i=0;i<count;i++)m.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));return m;}
  static void Intercept(MethodDefinition target,MethodReference hook){
@@ -44,10 +50,6 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
-   var commandPanel=module.Types.Single(t=>t.FullName=="Game.UI.CommandPanel");
-   if(commandPanel.Methods.Any(m=>m.Name=="LateUpdate"))throw new Exception("지원하지 않는 CommandPanel LateUpdate");
-   var late=new MethodDefinition("LateUpdate",Mono.Cecil.MethodAttributes.Private|Mono.Cecil.MethodAttributes.HideBySig,module.TypeSystem.Void);commandPanel.Methods.Add(late);
-   late.Body.Instructions.Add(Instruction.Create(OpCodes.Call,Hook(module,"EnforceHudFrame",0)));late.Body.Instructions.Add(Instruction.Create(OpCodes.Ret));
    Intercept(Find(a,"Game.UI.HUDChatPanel","SendMessage"),Hook(module,"TryCheat",1));
    var chatUpdate=Find(a,"Game.UI.HUDChatPanel","Update");
    var campaign=chatUpdate.Body.Instructions.Single(i=>i.OpCode==OpCodes.Ldfld && ((FieldReference)i.Operand).Name=="mIsCampaign");
@@ -70,7 +72,7 @@ public static class Patcher {
    il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_0));il.InsertBefore(first,Instruction.Create(OpCodes.Call,Hook(module,"BeforeList",1)));
    foreach(var ret in init.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;il.InsertAfter(ret,Instruction.Create(OpCodes.Call,Hook(module,"AfterList",1)));il.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
    var refresh=Find(a,"Carbon.UI.Unity.UIList","RefreshDataWithoutLinks");var refreshIl=refresh.Body.GetILProcessor();
-   foreach(var ret in refresh.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;refreshIl.InsertAfter(ret,Instruction.Create(OpCodes.Call,Hook(module,"AfterRefresh",1)));refreshIl.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
+   foreach(var ret in refresh.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var changed=Hook(module,"AfterRefreshChanged",0);changed.ReturnType=module.TypeSystem.Boolean;changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Boolean));changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));refreshIl.InsertAfter(ret,Instruction.Create(OpCodes.Call,changed));refreshIl.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
   }
   if(name=="Game.Application.dll"){
    var enter=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnEnter");var enterIl=enter.Body.GetILProcessor();enterIl.InsertBefore(enter.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(module,"BeginStartupLoad",0)));
@@ -80,7 +82,7 @@ public static class Patcher {
   a.Write(output);
  }}}
  public static void Apply(string game){
-  CheckStopped();string dir=Managed(game),statePath=State(game);
+  CheckStopped(game);string dir=Managed(game),statePath=State(game);
   if(File.Exists(statePath)){
    var previous=Json.Deserialize<PatchSet>(File.ReadAllText(statePath));
    if(previous.Revision<Revision && previous.Files.All(f=>File.Exists(Path.Combine(dir,f.Name))&&Hash(Path.Combine(dir,f.Name))==f.PatchedHash)){Restore(game);Apply(game);return;}
@@ -112,7 +114,7 @@ public static class Patcher {
   }finally{if(Directory.Exists(stage))Directory.Delete(stage,true);}
  }
  public static void Restore(string game){
-  CheckStopped();string dir=Managed(game),statePath=State(game);
+  CheckStopped(game);string dir=Managed(game),statePath=State(game);
   if(!File.Exists(statePath)){
    string dll=Path.Combine(game,RelativeDll),backup=dll+".cfl-original",record=dll+".cfl-patch.json";
    if(!File.Exists(backup)||!File.Exists(record))throw new Exception("복원 가능한 백업이 없습니다.");
