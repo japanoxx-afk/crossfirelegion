@@ -1,4 +1,4 @@
-# crossfirelegion
+﻿# crossfirelegion
 
 Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백업과 원본 복원이 가능한 모든 유닛 생산 패치를 제공합니다.
 
@@ -12,6 +12,14 @@ Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백
 기본 게임 경로: `C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)`
 
 Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포물에 포함하지 않습니다.
+
+## 반복 UI 비용 감소 및 끊김 진단 (v0.2.11)
+
+생산창으로 등록되지 않은 UIList의 갱신은 즉시 반환해 UI 계층 탐색과 리플렉션 호출을 생략합니다. 실명·치명타 판별은 속성 객체별 약한 참조 캐시에 보관해 동일한 효과를 읽을 때 반복 조회하지 않습니다. UIList 해제 시 등록 정보를 제거해 이전 화면의 UI를 계속 참조하거나 갱신하지 않습니다.
+
+60초마다 `[CFL All Units] Render intervals` 진단 한 줄을 게임 로그에 남깁니다. Unity 프레임 번호로 중복 Canvas 호출을 제외하고, 렌더 콜백 간격의 p95(1ms 구간, 500은 499ms 초과), 최대값, 50/100ms 초과 횟수, GC 0세대 수집 횟수를 집계합니다. 프레임마다 파일을 쓰거나 컬렉션을 만들지 않습니다. 메뉴·로딩·백그라운드 시간도 포함되므로 이 숫자만으로 CPU/GPU 병목이나 GC 원인을 확정할 수 없습니다.
+
+확인한 기존 로그는 Unity 2020.3.7f1 / RTX 4080이며, 최근 경기 중 지속적인 예외 폭주는 발견되지 않았습니다. 직접 GC 호출은 조사한 게임/Carbon 최상위 메서드에서 경기 시작 시점에 발견됐습니다. 런타임의 자동 GC나 다른 병목까지 배제한 결과는 아닙니다. 이번 변경은 확인된 모드의 불필요한 작업을 줄이며, 실제 경기의 끊김 해소 여부는 다음 플레이 기록으로 확인해야 합니다.
 
 ## 실명·치명타 전투 텍스트 축소 (v0.2.10)
 

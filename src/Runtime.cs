@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 [assembly:AssemblyVersion("0.2.0.0")]
 public static partial class CflRuntime {
  public const int Slots=64;
@@ -111,16 +112,18 @@ public static partial class CflRuntime {
    i++;
   }
  }catch(Exception e){Log(e);}}
+ public static void ForgetList(object list){layouts.Remove(list);configuredGlobals.Remove(list);}
  static bool renderInstalled;
+ static Func<int> unityFrame;static int sampledFrame=-1;
  static void InstallRowGapRender(){
-  if(renderInstalled)return;var canvas=TypeByName("UnityEngine.Canvas");if(canvas==null)return;
+  if(renderInstalled)return;var time=TypeByName("UnityEngine.Time");if(time!=null)unityFrame=(Func<int>)Delegate.CreateDelegate(typeof(Func<int>),time.GetProperty("frameCount").GetGetMethod());var canvas=TypeByName("UnityEngine.Canvas");if(canvas==null)return;
   var registry=TypeByName("UnityEngine.UI.CanvasUpdateRegistry");if(registry!=null)registry.GetProperty("instance",BindingFlags.Static|BindingFlags.Public).GetValue(null,null);
   var render=canvas.GetEvent("willRenderCanvases",BindingFlags.Static|BindingFlags.Public);
   render.AddEventHandler(null,Delegate.CreateDelegate(render.EventHandlerType,typeof(CflRuntime).GetMethod("RenderRowGaps")));renderInstalled=true;
  }
- public static bool AfterRefreshChanged(bool changed,object list){if(changed){AfterRefresh(list);Layout layout;if(layouts.TryGetValue(list,out layout))layout.GapPending=true;}return changed;}
+ public static bool AfterRefreshChanged(bool changed,object list){Layout layout;if(changed && layouts.TryGetValue(list,out layout)){AfterRefresh(list);layout.GapPending=true;}return changed;}
  // Run after Unity's native grid rebuild, only for lists dirtied since the last render.
- public static void RenderRowGaps(){foreach(var layout in layouts.Values){
+ public static void RenderRowGaps(){SampleFrame();foreach(var layout in layouts.Values){
   if(!layout.GapPending){if(layout.Gap==0 || layout.Probe==null)continue;try{if(Math.Abs((float)Get(Get(layout.Probe,"anchoredPosition"),"y")-layout.ProbeY)<.01f)continue;}catch{continue;}}layout.GapPending=false;
   try{
    int rows=Math.Max(3,(layout.Count+3)/4),i=0;
@@ -153,7 +156,11 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
- static bool IsLargeCombatText(object attributes){
+ class CombatEffect {public bool Large;}
+ static readonly ConditionalWeakTable<object,CombatEffect> combatEffects=new ConditionalWeakTable<object,CombatEffect>();
+ static bool IsLargeCombatText(object attributes){return attributes!=null && combatEffects.GetValue(attributes,ReadCombatEffect).Large;}
+ static CombatEffect ReadCombatEffect(object attributes){return new CombatEffect{Large=ReadCombatEffectPath(attributes)};}
+ static bool ReadCombatEffectPath(object attributes){
   if(attributes==null)return false;object asset=Get(attributes,"FXAsset");if(asset==null)return false;
   string path=(string)Get(asset,"PathToAssetInBundle");if(String.IsNullOrEmpty(path))return false;
   if(path.IndexOf('\\')>=0)path=path.Replace('\\','/');
@@ -174,6 +181,22 @@ public static partial class CflRuntime {
   TypeByName("UnityEngine.Application").GetProperty("backgroundLoadingPriority",BindingFlags.Public|BindingFlags.Static).SetValue(null,startupPriority,null);
   startupWatch.Stop();Log("Startup preload finished in "+startupWatch.Elapsed.TotalSeconds.ToString("F2",System.Globalization.CultureInfo.InvariantCulture)+" s; loading priority restored");startupWatch=null;startupPriority=null;
  }catch(Exception e){Log(e);}}
+
+ // Fixed-size counters: no per-frame strings, collections or disk writes.
+ static long frameLast,frameStart;static int frameCount,over50,over100,gcStart;static double frameMax;
+ static readonly int[] frameBuckets=new int[501];
+ static void SampleFrame(){
+  if(unityFrame==null)return;int current=unityFrame();if(current==sampledFrame)return;sampledFrame=current;
+  long now=System.Diagnostics.Stopwatch.GetTimestamp();
+  if(frameLast==0){frameLast=frameStart=now;gcStart=GC.CollectionCount(0);return;}
+  double ms=(now-frameLast)*1000.0/System.Diagnostics.Stopwatch.Frequency;frameLast=now;
+
+  frameCount++;frameBuckets[Math.Min(500,(int)Math.Ceiling(ms))]++;frameMax=Math.Max(frameMax,ms);if(ms>50)over50++;if(ms>100)over100++;
+  if((now-frameStart)/(double)System.Diagnostics.Stopwatch.Frequency<60)return;
+  int accumulated=0,p95=0;for(;p95<500;p95++){accumulated+=frameBuckets[p95];if(accumulated>=Math.Ceiling(frameCount*.95))break;}
+  Log("Render intervals (includes menus/loading/background): samples="+frameCount+" p95_ms="+p95+" max_ms="+frameMax.ToString("F1",System.Globalization.CultureInfo.InvariantCulture)+" over50="+over50+" over100="+over100+" gc0="+(GC.CollectionCount(0)-gcStart));
+  Array.Clear(frameBuckets,0,frameBuckets.Length);frameCount=over50=over100=0;frameMax=0;frameStart=now;gcStart=GC.CollectionCount(0);
+ }
 
  static void Log(object message){var debug=TypeByName("UnityEngine.Debug");if(debug!=null)debug.GetMethod("Log",new[]{typeof(object)}).Invoke(null,new[]{(object)("[CFL All Units] "+message)});}
 }
