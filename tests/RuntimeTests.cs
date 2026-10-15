@@ -24,7 +24,7 @@ namespace UnityEngine {
  public static class Debug {public static void Log(object o){Console.WriteLine(o);}}
 }
 namespace UnityEngine.UI {
- public class Image {public UnityEngine.Sprite sprite;public bool enabled=true;}
+ public class Image {public UnityEngine.Sprite sprite;public bool enabled=true;public MockGameObject gameObject=new MockGameObject{active=true};}
  public class LayoutGroup {public bool enabled=true;}
  public class Padding {public int left=10,right=10,top=12,bottom=12;}
  public enum Constraint {Flexible,FixedColumnCount,FixedRowCount}
@@ -46,7 +46,7 @@ class RuntimeTests {
  static Entry Make(long id){return new Entry{Button=new Reference<Button>{Value=new Button{ID=id}}};}
  static int Main(string[] args){try{CheatTests.Run();
   UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
-  var frame=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_ability_BG"}};var portrait=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_BG"}};UnityEngine.Resources.Images=new[]{frame,portrait};CflRuntime.HideCommandFrame();Check(!frame.enabled && portrait.enabled,"Only production frame should be hidden");
+  var frame=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_ability_BG"}};var portrait=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_BG"}};UnityEngine.Resources.Images=new[]{frame,portrait};CflRuntime.HideCommandFrame();Check(!frame.enabled && !frame.gameObject.active && portrait.enabled && portrait.gameObject.active,"Only production frame object should be hidden");frame.enabled=true;frame.gameObject.active=true;CflRuntime.EnforceHudFrame();Check(!frame.enabled && !frame.gameObject.active,"Native binding re-enabled production frame");
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
   var selection=new Selection();for(int i=0;i<25;i++)selection.mProductionButtonScratchpad.Add(Make(i));for(int i=25;i<45;i++)selection.mUpgradeButtonScratchpad.Add(Make(i));selection.mAbilityButtonScratchpad.Add(Make(45));selection.mAbilityButtonScratchpad.Add(Make(1));
@@ -76,14 +76,14 @@ class RuntimeTests {
   var global=new MockList();global.transform.parent.name="CommanderAbilityPanel";global.transform.parent.parent=new UnityEngine.Transform{rect=new UnityEngine.Rect{width=350,height=244},powerups=new UnityEngine.Transform{anchoredPosition=new UnityEngine.Vector2(32,276)}};
   CflRuntime.BeforeList(global);CflRuntime.AfterList(global);
   Check(global.m_MaxItems==12 && global.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Global abilities inherited production capacity/hide behavior");
-  Check(global.layout.constraintCount==2 && global.transform.parent.anchorMin.x==0 && global.transform.parent.anchorMin.y==1 && global.transform.parent.pivot.y==0 && global.transform.parent.anchoredPosition.x==12 && global.transform.parent.anchoredPosition.y==12,"Global skills must form a row above the minimap");
-  Check(global.transform.parent.parent.powerups.anchoredPosition.y==244+global.transform.parent.sizeDelta.y+24,"Powerup row must clear global skills");
+  Check(global.layout.constraintCount==1 && global.transform.parent.anchorMin.x==1 && global.transform.parent.anchorMin.y==1 && global.transform.parent.pivot.y==1 && global.transform.parent.anchoredPosition.x==-32 && global.transform.parent.anchoredPosition.y==0 && global.transform.parent.sizeDelta.x==82 && global.transform.parent.sizeDelta.y==152,"Global skills must use the authored vertical slot beside the minimap");
+  Check(global.transform.parent.parent.powerups.anchoredPosition.y==244+32,"Powerup row must clear global skills");
   var globalSize=global.transform.parent.sizeDelta;CflRuntime.Pack(selection,new Button[64]);
   Check(global.transform.parent.sizeDelta.x==globalSize.x && global.transform.parent.sizeDelta.y==globalSize.y,"Selecting production changed global skill geometry");
   CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
   list.transform.parent.anchorMin=new UnityEngine.Vector2(0,1);list.transform.parent.anchoredPosition=new UnityEngine.Vector2(50,348);CflRuntime.AfterRefresh(list);Check(list.transform.parent.anchorMin.x==1 && list.transform.parent.anchorMin.y==0 && list.transform.parent.anchoredPosition.y==12,"Native UI updates must not move production away from bottom HUD");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
-  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, global skills in separate horizontal row, powerups clear global skills, nested UI excluded.");
+  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}

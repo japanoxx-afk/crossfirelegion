@@ -50,15 +50,13 @@ public static partial class CflRuntime {
   object transform=Get(list,"transform"),panel=Get(transform,"parent");
   if(panel==null || (string)Get(panel,"name")!="CommanderAbilityPanel")return false;
   object grid=Component(list,TypeByName("UnityEngine.UI.GridLayoutGroup"));if(grid==null)return true;
-  object cell=Get(grid,"cellSize"),spacing=Get(grid,"spacing"),padding=Get(grid,"padding");
-  float width=2*(float)Get(cell,"x")+(float)Get(spacing,"x")+(int)Get(padding,"left")+(int)Get(padding,"right")+16;
-  float height=(float)Get(cell,"y")+(int)Get(padding,"top")+(int)Get(padding,"bottom")+12;
-  var constraint=grid.GetType().GetProperty("constraint");constraint.SetValue(grid,Enum.ToObject(constraint.PropertyType,1),null);Set(grid,"constraintCount",2);
-  Set(panel,"anchorMin",Vector(0,1));Set(panel,"anchorMax",Vector(0,1));Set(panel,"pivot",Vector(0,0));
-  Set(panel,"sizeDelta",Vector(width,height));Set(panel,"anchoredPosition",Vector(12,12));
+  var constraint=grid.GetType().GetProperty("constraint");constraint.SetValue(grid,Enum.ToObject(constraint.PropertyType,1),null);Set(grid,"constraintCount",1);
+  // Authored level20 geometry: the narrow slot beside the minimap, left of the energy meter.
+  Set(panel,"anchorMin",Vector(1,1));Set(panel,"anchorMax",Vector(1,1));Set(panel,"pivot",Vector(1,1));
+  Set(panel,"sizeDelta",Vector(82,152));Set(panel,"anchoredPosition",Vector(-32,0));
   object root=Get(panel,"parent");if(root!=null){
    object powerups=root.GetType().GetMethod("Find",new[]{typeof(string)}).Invoke(root,new object[]{"UIListPowerupAbilities"});
-   if(powerups!=null){object position=Get(powerups,"anchoredPosition");float rootHeight=(float)Get(Get(root,"rect"),"height");Set(powerups,"anchoredPosition",Vector((float)Get(position,"x"),rootHeight+height+24));}
+   if(powerups!=null){object position=Get(powerups,"anchoredPosition");float rootHeight=(float)Get(Get(root,"rect"),"height");Set(powerups,"anchoredPosition",Vector((float)Get(position,"x"),rootHeight+32));}
   }
   return true;
  }
@@ -96,12 +94,24 @@ public static partial class CflRuntime {
   }
  }catch(Exception e){Log(e);}}
  // Hide only the decorative command-area sprite; selection portrait and hotkeys are separate images.
+ static readonly List<object> commandFrames=new List<object>();static int frameScan;
+ static void HideFrameObject(object image){
+  Set(image,"enabled",false);
+  object go=Get(image,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{false});
+ }
  public static void HideCommandFrame(){
   var images=TypeByName("UnityEngine.UI.Image");var resources=TypeByName("UnityEngine.Resources");if(images==null || resources==null)return;
   var find=resources.GetMethod("FindObjectsOfTypeAll",BindingFlags.Public|BindingFlags.Static,null,new[]{typeof(Type)},null);
   foreach(object image in (IEnumerable)find.Invoke(null,new object[]{images})){
-   object sprite=Get(image,"sprite");if(sprite!=null && (string)Get(sprite,"name")=="ui_hud_command_ability_BG")Set(image,"enabled",false);
+   object sprite=Get(image,"sprite");if(sprite!=null && (string)Get(sprite,"name")=="ui_hud_command_ability_BG"){
+    if(!commandFrames.Contains(image))commandFrames.Add(image);HideFrameObject(image);
+   }
   }
+ }
+ // Called after native UI animations/bindings. Cache matches; periodically discover late-loaded HUDs.
+ public static void EnforceHudFrame(){
+  try{if(frameScan++%120==0)HideCommandFrame();}catch(Exception e){Log(e);}
+  for(int i=commandFrames.Count-1;i>=0;i--)try{HideFrameObject(commandFrames[i]);}catch{commandFrames.RemoveAt(i);}
  }
  static void ApplyLayout(Layout layout,int count){
   float x=-6f,y=12f;
