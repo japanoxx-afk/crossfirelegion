@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=16;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll"};
+ public const int Revision=17;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -92,6 +92,10 @@ public static class Patcher {
     var hook=Hook(module,"CombatTextAdditionalScale",0);hook.ReturnType=module.TypeSystem.Single;hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Single));hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));
     var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,scale));il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,binding));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));il.InsertBefore(first,Instruction.Create(OpCodes.Starg,scale));
    }
+  }
+  if(name=="Carbon.Localization.Core.dll"){
+   var method=Find(a,"Carbon.Localization.Core.SingleLanguageCacheLocalizationDatabase","GetLanguage");var il=method.Body.GetILProcessor();var hook=Hook(module,"FillKorean",1);hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));
+   foreach(var ret in method.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Dup;var lang=Instruction.Create(OpCodes.Ldarg_1);il.InsertAfter(ret,lang);var call=Instruction.Create(OpCodes.Call,hook);il.InsertAfter(lang,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
   }
   if(name=="Game.Application.dll"){
    var enter=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnEnter");var enterIl=enter.Body.GetILProcessor();enterIl.InsertBefore(enter.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(module,"BeginStartupLoad",0)));
