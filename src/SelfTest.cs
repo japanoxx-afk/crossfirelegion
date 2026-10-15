@@ -10,7 +10,7 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
    foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
@@ -20,6 +20,15 @@ public static class SelfTest {
     Require(m.Body.Instructions.Count==8,"원본 코드 패턴");
    }
    Patcher.Apply(test);Require(Patcher.Status(test).Contains("적용됨"),"패치 상태");
+   Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
+   string statePath=Path.Combine(Path.GetDirectoryName(dll),"CflMod.state.json");string stateText=File.ReadAllText(statePath);
+   var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.WriteAllText(statePath,serializer.Serialize(prior));
+   Require(Patcher.NeedsUpgrade(test),"이전 패치 자동 갱신 감지");File.WriteAllText(statePath,stateText);
+   using(var app=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.Application.dll"))){
+    var loader=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.ApplicationAssetBundleLoadingState");
+    Require(loader.Methods.Single(m=>m.Name=="OnEnter").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::BeginStartupLoad")),"초기 로딩 최적화 진입 후크");
+    Require(loader.Methods.Single(m=>m.Name=="OnExit").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::EndStartupLoad")),"초기 로딩 우선순위 복원 후크");
+   }
    bool blocked=false;try{Patcher.Apply(test);}catch{blocked=true;}Require(blocked,"중복 적용 차단");
    string patched=Patcher.Hash(dll);string ui=Path.Combine(Path.GetDirectoryName(dll),"Game.UI.dll");byte[] uiBytes=File.ReadAllBytes(ui);File.AppendAllText(ui,"tamper");
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
@@ -58,7 +67,7 @@ public static class SelfTest {
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, three-DLL byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, four-DLL byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
  }

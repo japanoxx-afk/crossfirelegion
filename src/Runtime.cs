@@ -84,6 +84,7 @@ public static partial class CflRuntime {
   if(LayoutGlobalSkills(list))return;
   if(!IsCommandList(list))return;
   object provider=Get(list,"DataProvider");if(provider==null)return;
+  Layout current;if(layouts.TryGetValue(list,out current))ApplyLayout(current,visibleButtons);
   var getItem=provider.GetType().GetMethod("GetItemAtIndex",new[]{typeof(int)});
   int i=0;foreach(object item in (IEnumerable)Get(list,"ListItems")){
    object data=getItem.Invoke(provider,new object[]{i});bool valid=data!=null && (bool)data.GetType().GetMethod("get_HasValue").Invoke(data,null);
@@ -103,7 +104,8 @@ public static partial class CflRuntime {
   }
  }
  static void ApplyLayout(Layout layout,int count){
-  float x=(float)Get(layout.Position,"x"),y=(float)Get(layout.Position,"y");
+  float x=-6f,y=12f;
+  Set(layout.Panel,"anchorMin",Vector(1,0));Set(layout.Panel,"anchorMax",Vector(1,0));Set(layout.Panel,"pivot",Vector(1,0));
   float viewportWidth=1920,viewportHeight=1080;
   if(layout.Viewport!=null){object rect=Get(layout.Viewport,"rect");float w=(float)Get(rect,"width"),h=(float)Get(rect,"height");if(w>0 && h>0){viewportWidth=w;viewportHeight=h;}}
   int columns=4,rows=Math.Max(3,(count+columns-1)/columns);
@@ -116,5 +118,19 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
+ // Asset integration gets a larger frame budget only during initial application preload.
+ static object startupPriority;static System.Diagnostics.Stopwatch startupWatch;
+ public static void BeginStartupLoad(){try{
+  if(startupWatch!=null)return;
+  var property=TypeByName("UnityEngine.Application").GetProperty("backgroundLoadingPriority",BindingFlags.Public|BindingFlags.Static);
+  startupPriority=property.GetValue(null,null);property.SetValue(null,Enum.Parse(property.PropertyType,"High"),null);
+  startupWatch=System.Diagnostics.Stopwatch.StartNew();Log("Startup preload: high loading priority enabled");
+ }catch(Exception e){Log(e);}}
+ public static void EndStartupLoad(){try{
+  if(startupWatch==null)return;
+  TypeByName("UnityEngine.Application").GetProperty("backgroundLoadingPriority",BindingFlags.Public|BindingFlags.Static).SetValue(null,startupPriority,null);
+  startupWatch.Stop();Log("Startup preload finished in "+startupWatch.Elapsed.TotalSeconds.ToString("F2",System.Globalization.CultureInfo.InvariantCulture)+" s; loading priority restored");startupWatch=null;startupPriority=null;
+ }catch(Exception e){Log(e);}}
+
  static void Log(object message){var debug=TypeByName("UnityEngine.Debug");if(debug!=null)debug.GetMethod("Log",new[]{typeof(object)}).Invoke(null,new[]{(object)("[CFL All Units] "+message)});}
 }

@@ -13,6 +13,14 @@ Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백
 
 Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포물에 포함하지 않습니다.
 
+## HUD 고정 및 초기 로딩 개선 (v0.2.7)
+
+생산창의 앵커·피벗을 우측 하단으로 명시하고, UI 새로 고침으로 위치가 변경되어도 우측 6 / 하단 12 UI 단위 여백으로 복구합니다. 이전 패치가 설치된 경우 **Steam으로 게임 실행** 버튼이 먼저 패치를 갱신합니다. 런처 업데이트와 게임 DLL 업데이트가 따로 남아 이전 HUD가 계속 표시되던 상황을 방지합니다. 원본 상태에서 게임을 실행하는 경우에는 자동 패치를 적용하지 않습니다.
+
+초기 애플리케이션 자산 프리로드 동안 `Application.backgroundLoadingPriority`를 High로 올려 비동기 자산 처리에 더 많은 시간을 배정하고, 해당 로딩 상태를 벗어나면 기존 값으로 복구합니다. Steam 인증, 프로필, 필수 자산 로딩 및 셰이더 준비는 유지합니다. [Unity 2020.3 공식 API 설명](https://docs.unity3d.com/2020.3/Documentation/ScriptReference/Application-backgroundLoadingPriority.html)을 기준으로 구현했습니다. 초기 로딩 중 화면 갱신이 일시적으로 덜 매끄러울 수 있습니다.
+
+`Player.log`와 게임 상세 로그의 `[CFL All Units] Startup preload finished in ... s`에 자산 프리로드 소요 시간을 기록합니다. 이 값은 전체 메뉴 진입 시간이 아닙니다. 로딩 우선순위 설정/복원, 이전 패치 감지, HUD 앵커 복구 및 4개 DLL의 적용·원본 복원을 검증했습니다. 실제 메뉴 진입 시간 단축은 아직 측정하지 않았습니다.
+
 ## 글로벌 스킬 배치 수정 (v0.2.6)
 
 글로벌 스킬의 `CommanderAbilityPanel`도 생산창과 같은 `Game.UI.CommandPanel` 클래스여서 생산창 확장 대상에 포함되던 문제를 수정했습니다. 이제 생산창 64칸/확대 규칙에서 제외하고, 기존 글로벌 스킬 버튼을 미니맵 위에 가로 2열로 정렬합니다. 단축키·클릭 영역·쿨다운은 기존 버튼을 그대로 사용합니다. 파워업 목록은 그 위로 이동해 겹침을 피합니다. 생산 건물 선택을 바꿔도 글로벌 스킬 창의 크기와 위치는 유지합니다.

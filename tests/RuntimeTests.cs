@@ -19,6 +19,8 @@ namespace UnityEngine {
  public class Transform {public string name="CommandPanel";public bool hasPanel;public Transform parent;public Vector2 anchorMin,anchorMax,pivot,sizeDelta,anchoredPosition;public Vector3 localScale=new Vector3(1,1,1);public Rect rect=new Rect{width=0,height=0};public object GetComponent(Type type){return hasPanel?new Game.UI.CommandPanel():null;}public Transform powerups;public object Find(string path){return path=="UIListPowerupAbilities"?powerups:null;}}
  public class Sprite {public string name;}
  public static class Resources {public static UnityEngine.UI.Image[] Images;public static object FindObjectsOfTypeAll(Type t){return Images??new UnityEngine.UI.Image[0];}}
+ public enum ThreadPriority {Low,BelowNormal,Normal,High}
+ public static class Application {public static ThreadPriority backgroundLoadingPriority{get;set;}}
  public static class Debug {public static void Log(object o){Console.WriteLine(o);}}
 }
 namespace UnityEngine.UI {
@@ -43,6 +45,7 @@ class RuntimeTests {
  static void Check(bool value,string name){if(!value)throw new Exception(name);}
  static Entry Make(long id){return new Entry{Button=new Reference<Button>{Value=new Button{ID=id}}};}
  static int Main(string[] args){try{CheatTests.Run();
+  UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
   var frame=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_ability_BG"}};var portrait=new UnityEngine.UI.Image{sprite=new UnityEngine.Sprite{name="ui_hud_command_BG"}};UnityEngine.Resources.Images=new[]{frame,portrait};CflRuntime.HideCommandFrame();Check(!frame.enabled && portrait.enabled,"Only production frame should be hidden");
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
@@ -78,6 +81,7 @@ class RuntimeTests {
   var globalSize=global.transform.parent.sizeDelta;CflRuntime.Pack(selection,new Button[64]);
   Check(global.transform.parent.sizeDelta.x==globalSize.x && global.transform.parent.sizeDelta.y==globalSize.y,"Selecting production changed global skill geometry");
   CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
+  list.transform.parent.anchorMin=new UnityEngine.Vector2(0,1);list.transform.parent.anchoredPosition=new UnityEngine.Vector2(50,348);CflRuntime.AfterRefresh(list);Check(list.transform.parent.anchorMin.x==1 && list.transform.parent.anchorMin.y==0 && list.transform.parent.anchoredPosition.y==12,"Native UI updates must not move production away from bottom HUD");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
   Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, command frame hidden, portrait retained, viewport scale at 1080 and 720, small selection restores original position, global skills in separate horizontal row, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
