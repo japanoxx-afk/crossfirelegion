@@ -164,13 +164,26 @@ public static partial class CflRuntime {
   foreach(var layout in layouts.Values){
    object ancestor=target;for(int depth=0;ancestor!=null && depth<8;depth++,ancestor=Get(ancestor,"parent")){
     if(!Object.ReferenceEquals(ancestor,layout.Panel))continue;
-    if(Object.ReferenceEquals(target,layout.Panel) && Convert.ToInt32(Get(tooltip,"m_VerticalAlignment"))==2 && (float)Get(tooltip,"m_VerticalPadding")==8f)return;
+    object tip=Get(tooltip,"RectTransform"),scale=Get(tip,"lossyScale");
+    float sx=Math.Abs((float)Get(scale,"x")),sy=Math.Abs((float)Get(scale,"y"));if(sx<=0 || sy<=0)return;
+    object rect=Get(tip,"rect");float width=(float)Get(rect,"width"),height=(float)Get(rect,"height");
+    var vector=TypeByName("UnityEngine.Vector3");if(tipCorners==null){tipCorners=Array.CreateInstance(vector,4);viewCorners=Array.CreateInstance(vector,4);}
+    layout.Panel.GetType().GetMethod("GetWorldCorners").Invoke(layout.Panel,new object[]{tipCorners});
+    object parent=Get(tip,"parent");parent.GetType().GetMethod("GetWorldCorners").Invoke(parent,new object[]{viewCorners});
+    float top=(float)Get(tipCorners.GetValue(1),"y"),ceiling=(float)Get(viewCorners.GetValue(1),"y");
+    bool above=TooltipFitsAbove(top,ceiling,height*sy,8*sy);
     Set(tooltip,"mTarget",layout.Panel);
-    var alignment=Field(tooltip.GetType(),"m_VerticalAlignment");alignment.SetValue(tooltip,Enum.ToObject(alignment.FieldType,2));
-    Set(tooltip,"m_VerticalPadding",8f);return;
+    SetEnumIfChanged(tooltip,"m_VerticalAlignment",2);
+    SetEnumIfChanged(tooltip,"m_HorizontalAlignment",above?3:2);
+    SetFloatIfChanged(tooltip,"m_HorizontalPadding",above?0:-width-8);
+    SetFloatIfChanged(tooltip,"m_VerticalPadding",above?8:-height);return;
    }
   }
  }catch(Exception e){Log(e);}}
+ static Array tipCorners,viewCorners;
+ public static bool TooltipFitsAbove(float top,float ceiling,float height,float gap){return top+height+gap<=ceiling;}
+ static void SetEnumIfChanged(object target,string name,int value){var field=Field(target.GetType(),name);if(Convert.ToInt32(field.GetValue(target))!=value)field.SetValue(target,Enum.ToObject(field.FieldType,value));}
+ static void SetFloatIfChanged(object target,string name,float value){if((float)Get(target,name)!=value)Set(target,name,value);}
  static bool IsLargeCombatText(object attributes){return attributes!=null && combatEffects.GetValue(attributes,ReadCombatEffect).Large;}
  static CombatEffect ReadCombatEffect(object attributes){return new CombatEffect{Large=ReadCombatEffectPath(attributes)};}
  static bool ReadCombatEffectPath(object attributes){
