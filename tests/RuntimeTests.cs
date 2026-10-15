@@ -32,7 +32,7 @@ namespace UnityEngine.UI {
  public enum Constraint {Flexible,FixedColumnCount,FixedRowCount}
  public class GridLayoutGroup:LayoutGroup {public UnityEngine.Vector2 cellSize=new UnityEngine.Vector2(68,68),spacing=new UnityEngine.Vector2(8,8);public Padding padding=new Padding();public Constraint constraint{get;set;}int columns;public int layoutWrites;public int constraintCount{get{return columns;}set{columns=value;layoutWrites++;}}}
 }
-namespace Game.UI {public class CommandPanel {}}
+namespace Game.UI {public class CommandPanel {} public class UITooltipComponent {public enum Alignment{None,Center,Above,Below} public object mTarget;public Alignment m_VerticalAlignment;public float m_VerticalPadding;}}
 public class MockGameObject {public bool active;public bool activeSelf{get{return active;}}public void SetActive(bool value){active=value;}}
 public class MockData {public bool HasValue{get;set;}}
 public class MockProvider {public MockData[] Data=new MockData[64];public MockData GetItemAtIndex(int index){return Data[index];}}
@@ -107,6 +107,8 @@ class RuntimeTests {
   CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
   list.transform.parent.anchorMin=new UnityEngine.Vector2(0,1);list.transform.parent.anchoredPosition=new UnityEngine.Vector2(50,348);CflRuntime.AfterRefresh(list);Check(list.transform.parent.anchorMin.x==1 && list.transform.parent.anchorMin.y==0 && list.transform.parent.anchoredPosition.y==12,"Native UI updates must not move production away from bottom HUD");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
+  var tip=new Game.UI.UITooltipComponent{mTarget=new UnityEngine.Transform{parent=list.transform.parent}};CflRuntime.PositionProductionTooltip(tip);Check(Object.ReferenceEquals(tip.mTarget,list.transform.parent) && tip.m_VerticalAlignment==Game.UI.UITooltipComponent.Alignment.Above && tip.m_VerticalPadding==8,"Production tooltip must anchor above entire expanded panel");
+  var otherTarget=new UnityEngine.Transform();tip.mTarget=otherTarget;tip.m_VerticalPadding=4;CflRuntime.PositionProductionTooltip(tip);Check(Object.ReferenceEquals(tip.mTarget,otherTarget) && tip.m_VerticalPadding==4,"Unrelated tooltip changed");
   CflRuntime.ForgetList(list);var removedSize=list.transform.parent.sizeDelta;CflRuntime.Pack(new Selection(),new Button[64]);Check(list.transform.parent.sizeDelta.y==removedSize.y,"Removed list was updated");
   Console.WriteLine("PASS: blind/critical combat FX half size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}

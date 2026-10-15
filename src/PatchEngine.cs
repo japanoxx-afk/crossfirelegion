@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=13;
+ public const int Revision=14;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -58,6 +58,8 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   var tooltip=Find(a,"Game.UI.UIAnchoredPanel","UpdatePosition");var tipIl=tooltip.Body.GetILProcessor();var tipFirst=tooltip.Body.Instructions[0];tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Ldarg_0));tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Call,Hook(module,"PositionProductionTooltip",1)));
+
    Intercept(Find(a,"Game.UI.HUDChatPanel","SendMessage"),Hook(module,"TryCheat",1));
    var chatUpdate=Find(a,"Game.UI.HUDChatPanel","Update");
    var campaign=chatUpdate.Body.Instructions.Single(i=>i.OpCode==OpCodes.Ldfld && ((FieldReference)i.Operand).Name=="mIsCampaign");

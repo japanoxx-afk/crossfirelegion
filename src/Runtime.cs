@@ -158,6 +158,19 @@ public static partial class CflRuntime {
  }
  class CombatEffect {public bool Large;}
  static readonly ConditionalWeakTable<object,CombatEffect> combatEffects=new ConditionalWeakTable<object,CombatEffect>();
+ public static void PositionProductionTooltip(object tooltip){try{
+  if(tooltip.GetType().FullName!="Game.UI.UITooltipComponent")return;
+  object target=Get(tooltip,"mTarget");if(target==null)return;
+  foreach(var layout in layouts.Values){
+   object ancestor=target;for(int depth=0;ancestor!=null && depth<8;depth++,ancestor=Get(ancestor,"parent")){
+    if(!Object.ReferenceEquals(ancestor,layout.Panel))continue;
+    if(Object.ReferenceEquals(target,layout.Panel) && Convert.ToInt32(Get(tooltip,"m_VerticalAlignment"))==2 && (float)Get(tooltip,"m_VerticalPadding")==8f)return;
+    Set(tooltip,"mTarget",layout.Panel);
+    var alignment=Field(tooltip.GetType(),"m_VerticalAlignment");alignment.SetValue(tooltip,Enum.ToObject(alignment.FieldType,2));
+    Set(tooltip,"m_VerticalPadding",8f);return;
+   }
+  }
+ }catch(Exception e){Log(e);}}
  static bool IsLargeCombatText(object attributes){return attributes!=null && combatEffects.GetValue(attributes,ReadCombatEffect).Large;}
  static CombatEffect ReadCombatEffect(object attributes){return new CombatEffect{Large=ReadCombatEffectPath(attributes)};}
  static bool ReadCombatEffectPath(object attributes){
@@ -183,19 +196,20 @@ public static partial class CflRuntime {
  }catch(Exception e){Log(e);}}
 
  // Fixed-size counters: no per-frame strings, collections or disk writes.
- static long frameLast,frameStart;static int frameCount,over50,over100,gcStart;static double frameMax;
+ static long frameLast,frameStart;static int frameCount,over50,over100,gcStart;static double frameMax;static int gcLast,gcStalls;
  static readonly int[] frameBuckets=new int[501];
  static void SampleFrame(){
   if(unityFrame==null)return;int current=unityFrame();if(current==sampledFrame)return;sampledFrame=current;
   long now=System.Diagnostics.Stopwatch.GetTimestamp();
-  if(frameLast==0){frameLast=frameStart=now;gcStart=GC.CollectionCount(0);return;}
+  if(frameLast==0){frameLast=frameStart=now;gcLast=gcStart=GC.CollectionCount(0);return;}
   double ms=(now-frameLast)*1000.0/System.Diagnostics.Stopwatch.Frequency;frameLast=now;
 
+  int gcNow=GC.CollectionCount(0);if(ms>100 && gcNow!=gcLast)gcStalls++;gcLast=gcNow;
   frameCount++;frameBuckets[Math.Min(500,(int)Math.Ceiling(ms))]++;frameMax=Math.Max(frameMax,ms);if(ms>50)over50++;if(ms>100)over100++;
   if((now-frameStart)/(double)System.Diagnostics.Stopwatch.Frequency<60)return;
   int accumulated=0,p95=0;for(;p95<500;p95++){accumulated+=frameBuckets[p95];if(accumulated>=Math.Ceiling(frameCount*.95))break;}
-  Log("Render intervals (includes menus/loading/background): samples="+frameCount+" p95_ms="+p95+" max_ms="+frameMax.ToString("F1",System.Globalization.CultureInfo.InvariantCulture)+" over50="+over50+" over100="+over100+" gc0="+(GC.CollectionCount(0)-gcStart));
-  Array.Clear(frameBuckets,0,frameBuckets.Length);frameCount=over50=over100=0;frameMax=0;frameStart=now;gcStart=GC.CollectionCount(0);
+  Log("Render intervals (includes menus/loading/background): samples="+frameCount+" p95_ms="+p95+" max_ms="+frameMax.ToString("F1",System.Globalization.CultureInfo.InvariantCulture)+" over50="+over50+" over100="+over100+" gc0="+(GC.CollectionCount(0)-gcStart)+" over100_with_gc="+gcStalls);
+  Array.Clear(frameBuckets,0,frameBuckets.Length);frameCount=over50=over100=gcStalls=0;frameMax=0;frameStart=now;gcStart=GC.CollectionCount(0);
  }
 
  static void Log(object message){var debug=TypeByName("UnityEngine.Debug");if(debug!=null)debug.GetMethod("Log",new[]{typeof(object)}).Invoke(null,new[]{(object)("[CFL All Units] "+message)});}
