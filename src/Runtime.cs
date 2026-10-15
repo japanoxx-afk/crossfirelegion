@@ -192,7 +192,8 @@ public static partial class CflRuntime {
   if(path.IndexOf('\\')>=0)path=path.Replace('\\','/');
   return path.EndsWith("/fx_prfb_status_blind.prefab",StringComparison.OrdinalIgnoreCase) || path.EndsWith("/fx_prfb_status_critical.prefab",StringComparison.OrdinalIgnoreCase);
  }
- public static float CombatTextScale(float original,object attributes){return IsLargeCombatText(attributes)?original*.5f:original;}
+ public static float CombatTextScale(float original,object attributes){return IsLargeCombatText(attributes)?original*.25f:original;}
+ public static float CombatTextAdditionalScale(float original,object attributes){return IsLargeCombatText(attributes)?1f:original;}
  public static bool CombatTextEntityScale(bool original,object attributes){return original && !IsLargeCombatText(attributes);}
  // Asset integration gets a larger frame budget only during initial application preload.
  static object startupPriority;static System.Diagnostics.Stopwatch startupWatch;

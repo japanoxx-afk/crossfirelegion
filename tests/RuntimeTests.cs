@@ -51,13 +51,15 @@ class RuntimeTests {
  static int Main(string[] args){try{CheatTests.Run();
   foreach(string effect in new[]{"blind","critical"}){
    var fx=new MockBoundFX{FXAsset=new MockFXAsset{PathToAssetInBundle="assets/art/fx/prefabs/fx_prfb_status_"+effect+".prefab"}};
-   Check(CflRuntime.CombatTextScale(1,fx)==.5f && CflRuntime.CombatTextScale(2,fx)==1,"Status text must be half size: "+effect);
+   Check(CflRuntime.CombatTextScale(1,fx)==.25f && CflRuntime.CombatTextScale(2,fx)==.5f,"Status text must be quarter size: "+effect);
    Check(!CflRuntime.CombatTextEntityScale(true,fx),"Large units must not enlarge status text: "+effect);
-   Check(CflRuntime.CombatTextScale(1,fx)==.5f,"Repeated reads must not shrink cumulatively");
+   Check(CflRuntime.CombatTextScale(1,fx)==.25f,"Repeated reads must not shrink cumulatively");
+   Check(CflRuntime.CombatTextAdditionalScale(10,fx)==1 && CflRuntime.CombatTextAdditionalScale(.5f,fx)==1,"Status text must ignore additional entity scaling");
    Check(fx.Reads==1,"Effect descriptor must only be inspected once");
   }
   var ordinaryFx=new MockBoundFX{FXAsset=new MockFXAsset{PathToAssetInBundle="assets/art/fx/prefabs/fx_prfb_f1_vitals_sheild_critical.prefab"}};
   Check(CflRuntime.CombatTextScale(2,ordinaryFx)==2 && CflRuntime.CombatTextEntityScale(true,ordinaryFx),"Unrelated critical-health effects changed");
+  Check(CflRuntime.CombatTextAdditionalScale(10,ordinaryFx)==10,"Unrelated FX additional scale changed");
   Check(CflRuntime.CombatTextScale(1,null)==1,"Missing effect descriptor changed");
   UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
   Check(CflRuntime.AfterRefreshChanged(true,new object()),"Unregistered UI must return native changed flag without inspecting it");
@@ -111,7 +113,7 @@ class RuntimeTests {
   Check(!CflRuntime.TooltipFitsAbove(900,1080,300,8),"Tall panel tooltip must move to left");
   Check(CflRuntime.TooltipFitsAbove(772,1080,300,8) && !CflRuntime.TooltipFitsAbove(773,1080,300,8),"Tooltip boundary gap incorrect");
   CflRuntime.ForgetList(list);var removedSize=list.transform.parent.sizeDelta;CflRuntime.Pack(new Selection(),new Button[64]);Check(list.transform.parent.sizeDelta.y==removedSize.y,"Removed list was updated");
-  Console.WriteLine("PASS: blind/critical combat FX half size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
+  Console.WriteLine("PASS: blind/critical combat FX quarter size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}

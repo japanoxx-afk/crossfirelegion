@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=15;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll"};
+ public const int Revision=16;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -84,6 +84,14 @@ public static class Patcher {
    foreach(var ret in init.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;il.InsertAfter(ret,Instruction.Create(OpCodes.Call,Hook(module,"AfterList",1)));il.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
    var refresh=Find(a,"Carbon.UI.Unity.UIList","RefreshDataWithoutLinks");var refreshIl=refresh.Body.GetILProcessor();
    foreach(var ret in refresh.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var changed=Hook(module,"AfterRefreshChanged",0);changed.ReturnType=module.TypeSystem.Boolean;changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Boolean));changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));refreshIl.InsertAfter(ret,Instruction.Create(OpCodes.Call,changed));refreshIl.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
+  }
+  if(name=="Carbon.Presentation.Unity.dll"){
+   var spawner=module.Types.Single(t=>t.FullName=="Carbon.Presentation.Unity.CarbonFXSpawner");
+   foreach(var method in spawner.Methods.Where(m=>m.Name=="SpawnAndHostFXPrefab")){
+    var scale=method.Parameters.Single(p=>p.Name=="extraScale");var binding=method.Parameters.Single(p=>p.Name=="binding");
+    var hook=Hook(module,"CombatTextAdditionalScale",0);hook.ReturnType=module.TypeSystem.Single;hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Single));hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));
+    var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,scale));il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,binding));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));il.InsertBefore(first,Instruction.Create(OpCodes.Starg,scale));
+   }
   }
   if(name=="Game.Application.dll"){
    var enter=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnEnter");var enterIl=enter.Body.GetILProcessor();enterIl.InsertBefore(enter.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(module,"BeginStartupLoad",0)));
