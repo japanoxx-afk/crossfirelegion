@@ -43,10 +43,21 @@ public class MockList {
  public UnityEngine.UI.ContentSizeFitter fitter=new UnityEngine.UI.ContentSizeFitter();public MockProvider DataProvider=new MockProvider();
  public object GetComponent(Type type){return type==typeof(UnityEngine.UI.ContentSizeFitter)?(object)fitter:layout;}
 }
+public class MockFXAsset {public string PathToAssetInBundle;}
+public class MockBoundFX {public MockFXAsset FXAsset;}
 class RuntimeTests {
  static void Check(bool value,string name){if(!value)throw new Exception(name);}
  static Entry Make(long id){return new Entry{Button=new Reference<Button>{Value=new Button{ID=id}}};}
  static int Main(string[] args){try{CheatTests.Run();
+  foreach(string effect in new[]{"blind","critical"}){
+   var fx=new MockBoundFX{FXAsset=new MockFXAsset{PathToAssetInBundle="assets/art/fx/prefabs/fx_prfb_status_"+effect+".prefab"}};
+   Check(CflRuntime.CombatTextScale(1,fx)==.5f && CflRuntime.CombatTextScale(2,fx)==1,"Status text must be half size: "+effect);
+   Check(!CflRuntime.CombatTextEntityScale(true,fx),"Large units must not enlarge status text: "+effect);
+   Check(CflRuntime.CombatTextScale(1,fx)==.5f,"Repeated reads must not shrink cumulatively");
+  }
+  var ordinaryFx=new MockBoundFX{FXAsset=new MockFXAsset{PathToAssetInBundle="assets/art/fx/prefabs/fx_prfb_f1_vitals_sheild_critical.prefab"}};
+  Check(CflRuntime.CombatTextScale(2,ordinaryFx)==2 && CflRuntime.CombatTextEntityScale(true,ordinaryFx),"Unrelated critical-health effects changed");
+  Check(CflRuntime.CombatTextScale(1,null)==1,"Missing effect descriptor changed");
   UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
@@ -93,7 +104,7 @@ class RuntimeTests {
   CflRuntime.AfterRefresh(global);Check(global.m_MaxItems==12,"Global refresh entered production grid");
   list.transform.parent.anchorMin=new UnityEngine.Vector2(0,1);list.transform.parent.anchoredPosition=new UnityEngine.Vector2(50,348);CflRuntime.AfterRefresh(list);Check(list.transform.parent.anchorMin.x==1 && list.transform.parent.anchorMin.y==0 && list.transform.parent.anchoredPosition.y==12,"Native UI updates must not move production away from bottom HUD");
   var other=new MockList();other.transform.parent.hasPanel=false;other.transform.parent.parent=new UnityEngine.Transform{hasPanel=true};CflRuntime.BeforeList(other);CflRuntime.AfterList(other);Check(other.m_MaxItems==12 && other.layout.enabled && other.m_InvalidDataBehavior==MockList.Invalid.ScaleZero,"Nested tooltip list inside command panel changed");
-  Console.WriteLine("PASS: full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
+  Console.WriteLine("PASS: blind/critical combat FX half size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}

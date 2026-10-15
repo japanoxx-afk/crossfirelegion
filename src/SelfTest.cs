@@ -34,6 +34,9 @@ public static class SelfTest {
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
+    var fx=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.BoundFXAttribute");
+    Require(fx.Methods.Single(m=>m.Name=="get_FXScale").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::CombatTextScale")),"상태 텍스트 크기 후크");
+    Require(fx.Methods.Single(m=>m.Name=="get_ScaleToEntitySize").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::CombatTextEntityScale")),"유닛 크기 확대 제한 후크");
     var execute=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.ExecuteScriptCommand").Methods.Single(method=>method.Name=="Execute");
     Require(execute.Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::ExecuteCheat")),"시뮬레이션 자원 치트 후크");
     var fill=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.RosterHelper").Methods.Single(m=>m.Name=="FillRosterScratchpadForCategory");

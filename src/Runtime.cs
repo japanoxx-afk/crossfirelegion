@@ -153,6 +153,14 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
+ static bool IsLargeCombatText(object attributes){
+  if(attributes==null)return false;object asset=Get(attributes,"FXAsset");if(asset==null)return false;
+  string path=(string)Get(asset,"PathToAssetInBundle");if(String.IsNullOrEmpty(path))return false;
+  if(path.IndexOf('\\')>=0)path=path.Replace('\\','/');
+  return path.EndsWith("/fx_prfb_status_blind.prefab",StringComparison.OrdinalIgnoreCase) || path.EndsWith("/fx_prfb_status_critical.prefab",StringComparison.OrdinalIgnoreCase);
+ }
+ public static float CombatTextScale(float original,object attributes){return IsLargeCombatText(attributes)?original*.5f:original;}
+ public static bool CombatTextEntityScale(bool original,object attributes){return original && !IsLargeCombatText(attributes);}
  // Asset integration gets a larger frame budget only during initial application preload.
  static object startupPriority;static System.Diagnostics.Stopwatch startupWatch;
  public static void BeginStartupLoad(){try{
