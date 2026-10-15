@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Linq.Expressions;
 [assembly:AssemblyVersion("0.2.0.0")]
 public static partial class CflRuntime {
  public const int Slots=64;
@@ -11,7 +12,7 @@ public static partial class CflRuntime {
  class Access {public PropertyInfo Property;public FieldInfo Field;public MethodInfo Setter;}
  static readonly ConcurrentDictionary<Type,ConcurrentDictionary<string,Access>> members=new ConcurrentDictionary<Type,ConcurrentDictionary<string,Access>>();
  static readonly ConcurrentDictionary<string,Type> types=new ConcurrentDictionary<string,Type>();
- static readonly ConcurrentDictionary<Type,MethodInfo> conversions=new ConcurrentDictionary<Type,MethodInfo>();
+ static readonly ConcurrentDictionary<Type,Func<object,object>> conversions=new ConcurrentDictionary<Type,Func<object,object>>();
  static Access Member(Type type,string name){
   var map=members.GetOrAdd(type,t=>new ConcurrentDictionary<string,Access>());Access found;if(map.TryGetValue(name,out found))return found;
   var result=new Access();
@@ -25,7 +26,11 @@ public static partial class CflRuntime {
  static object Get(object o,string name){var a=Member(o.GetType(),name);return a.Property!=null?a.Property.GetValue(o,null):a.Field.GetValue(o);}
  static FieldInfo Field(Type t,string name){var field=Member(t,name).Field;if(field==null)throw new MissingFieldException(name);return field;}
  static void Set(object o,string name,object v){var a=Member(o.GetType(),name);if(a.Setter!=null)a.Setter.Invoke(o,new[]{v});else if(a.Field!=null)a.Field.SetValue(o,v);else throw new MissingMethodException("No setter for "+name);}
- static object Resolve(object reference){var m=conversions.GetOrAdd(reference.GetType(),t=>t.GetMethod("op_Implicit",BindingFlags.Static|BindingFlags.Public));return m.Invoke(null,new[]{reference});}
+ static object Resolve(object reference){return conversions.GetOrAdd(reference.GetType(),BuildConversion)(reference);}
+ static Func<object,object> BuildConversion(Type type){var method=type.GetMethod("op_Implicit",BindingFlags.Static|BindingFlags.Public);try{var arg=Expression.Parameter(typeof(object),"reference");return Expression.Lambda<Func<object,object>>(Expression.Convert(Expression.Call(method,Expression.Convert(arg,type)),typeof(object)),arg).Compile();}catch{return value=>method.Invoke(null,new[]{value});}}
+ class PackBuffers {public readonly HashSet<object> Seen=new HashSet<object>();public readonly List<object> Deferred=new List<object>(Slots);}
+ static readonly ConditionalWeakTable<object,PackBuffers> packBuffers=new ConditionalWeakTable<object,PackBuffers>();
+ static readonly string[] productionFields={"mProductionButtonScratchpad","mUpgradeButtonScratchpad"};
  public static void FillAll(object category,object destination){
   var add=destination.GetType().GetMethod("Add");var itemType=add.GetParameters()[0].ParameterType;
   var seen=new HashSet<object>();
@@ -36,19 +41,21 @@ public static partial class CflRuntime {
  }
  // Native commands and submenus retain their authored hotkey slots.
  public static void Pack(object selection,Array buttons){
-  int next=0,extent=0;var seen=new HashSet<object>();var deferred=new List<object>();
+  int next=0,extent=0;var buffer=packBuffers.GetOrCreateValue(selection);var seen=buffer.Seen;var deferred=buffer.Deferred;seen.Clear();deferred.Clear();
+  try{
   foreach(object entry in (IEnumerable)Field(selection.GetType(),"mAbilityButtonScratchpad").GetValue(selection)){
    object button=Resolve(Get(entry,"Button"));if(button==null || !seen.Add(Get(button,"ID")))continue;
    int slot=(int)Get(entry,"Index");
    if(slot>=0 && slot<buttons.Length && buttons.GetValue(slot)==null){buttons.SetValue(button,slot);extent=Math.Max(extent,slot+1);}else deferred.Add(button);
   }
-  foreach(string field in new[]{"mProductionButtonScratchpad","mUpgradeButtonScratchpad"}){
+  foreach(string field in productionFields){
    foreach(object entry in (IEnumerable)Field(selection.GetType(),field).GetValue(selection)){
     object button=Resolve(Get(entry,"Button"));if(button==null || !seen.Add(Get(button,"ID")))continue;
     deferred.Add(button);
    }
   }
   foreach(object button in deferred){while(next<buttons.Length && buttons.GetValue(next)!=null)next++;if(next>=buttons.Length)throw new InvalidOperationException("CFL command grid capacity exceeded");buttons.SetValue(button,next);extent=Math.Max(extent,++next);}
+  }finally{seen.Clear();deferred.Clear();}
   visibleButtons=extent;
   foreach(var list in new List<object>(layouts.Keys)){try{ApplyLayout(layouts[list],extent);}catch(Exception e){layouts.Remove(list);Log(e);}}
  }
