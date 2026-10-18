@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=19;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll"};
+ public const int Revision=20;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -109,6 +109,11 @@ public static class Patcher {
   }
   a.Write(output);
  }}}
+ public static string IncrementalBootConfig(string original){
+  var lines=original.Replace("\r\n","\n").Split('\n').Where(line=>!line.TrimStart().StartsWith("gc-max-time-slice=",StringComparison.Ordinal)).ToList();
+  while(lines.Count>0 && lines[lines.Count-1]=="")lines.RemoveAt(lines.Count-1);
+  lines.Add("gc-max-time-slice=3");return String.Join("\r\n",lines)+"\r\n";
+ }
  public static void Apply(string game){
   CheckStopped(game);string dir=Managed(game),statePath=State(game);
   if(File.Exists(statePath)){
@@ -127,8 +132,9 @@ public static class Patcher {
      if(Hash(backup)!=old.OriginalHash || (Hash(target)!=old.PatchedHash && Hash(target)!=old.OriginalHash))throw new Exception("이전 패치/백업이 변경되어 업그레이드를 중단했습니다.");
      source=backup;
     }
-    string temp=Path.Combine(stage,name);Rewrite(name,source,temp);
-    using(var verify=AssemblyDefinition.ReadAssembly(temp)){if(!verify.MainModule.AssemblyReferences.Any(r=>r.Name=="CflRuntime"))throw new Exception("패치 후크 검증 실패: "+name);}
+    string temp=Path.Combine(stage,Path.GetFileName(name));
+    if(name=="..\\boot.config")File.WriteAllText(temp,IncrementalBootConfig(File.ReadAllText(source)),new System.Text.UTF8Encoding(false));else Rewrite(name,source,temp);
+    if(name!="..\\boot.config")using(var verify=AssemblyDefinition.ReadAssembly(temp)){if(!verify.MainModule.AssemblyReferences.Any(r=>r.Name=="CflRuntime"))throw new Exception("패치 후크 검증 실패: "+name);}
     state.Files.Add(new PatchFile{Name=name,OriginalHash=Hash(source),PatchedHash=Hash(temp),PreviousHash=Hash(target)});staged[name]=temp;
    }
    string runtime=Path.Combine(stage,"CflRuntime.dll");

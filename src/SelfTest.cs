@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -11,7 +11,7 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
    foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
@@ -20,7 +20,9 @@ public static class SelfTest {
     var m=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.RosterHelper").Methods.Single(x=>x.Name=="IsAbilityInRoster");
     Require(m.Body.Instructions.Count==8,"원본 코드 패턴");
    }
+   Require(Patcher.IncrementalBootConfig("gc-max-time-slice=9\nother=1\n")=="other=1\r\ngc-max-time-slice=3\r\n","GC setting deduplication");
    Patcher.Apply(test);Require(Patcher.Status(test).Contains("적용됨"),"패치 상태");
+   Require(File.ReadAllText(Path.Combine(Path.GetDirectoryName(dll),"..","boot.config")).Contains("gc-max-time-slice=3"),"Incremental GC startup setting missing");
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
    string statePath=Path.Combine(Path.GetDirectoryName(dll),"CflMod.state.json");string stateText=File.ReadAllText(statePath);
    var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.WriteAllText(statePath,serializer.Serialize(prior));
@@ -81,7 +83,7 @@ public static class SelfTest {
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, six-DLL byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, six-DLL and boot.config byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
  }

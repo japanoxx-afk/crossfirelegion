@@ -224,7 +224,7 @@ public static partial class CflRuntime {
   if(unityFrame==null)return;int current=unityFrame();if(current==sampledFrame)return;sampledFrame=current;
   long now=System.Diagnostics.Stopwatch.GetTimestamp();
   if(frameLast==0){frameLast=frameStart=now;gcLast=gcStart=GC.CollectionCount(0);
-   try{var app=TypeByName("UnityEngine.Application");applicationFocused=(Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>),app.GetProperty("isFocused").GetGetMethod());var gc=TypeByName("UnityEngine.Scripting.GarbageCollector");Log("Diagnostics v0.2.17: incrementalGC="+gc.GetProperty("isIncremental").GetValue(null,null)+" managedMB="+(GC.GetTotalMemory(false)/1048576));}catch(Exception e){Log("Diagnostics capability: "+e.GetType().Name);}return;}
+   try{var app=TypeByName("UnityEngine.Application");applicationFocused=(Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>),app.GetProperty("isFocused").GetGetMethod());var gc=TypeByName("UnityEngine.Scripting.GarbageCollector");Log("Diagnostics v0.2.18: incrementalGC="+gc.GetProperty("isIncremental").GetValue(null,null)+" managedMB="+(GC.GetTotalMemory(false)/1048576));}catch(Exception e){Log("Diagnostics capability: "+e.GetType().Name);}return;}
   double ms=(now-frameLast)*1000.0/System.Diagnostics.Stopwatch.Frequency;frameLast=now;
 
   int gcNow=GC.CollectionCount(0);if(ms>100 && gcNow!=gcLast)gcStalls++;
