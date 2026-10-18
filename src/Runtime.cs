@@ -167,6 +167,7 @@ public static partial class CflRuntime {
  static object timerHud,timerObject,timerLabel;static long timerNext;static long timerSecond=-1;static double timerRate;static PropertyInfo timerFrameProperty;
  public static string MatchTimeText(long seconds){seconds=Math.Max(0,seconds);return seconds>=3600?String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}:{2:00}",seconds/3600,(seconds/60)%60,seconds%60):String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}",seconds/60,seconds%60);}
  public static void BeginMatchTimer(object hud){try{
+  if(Object.ReferenceEquals(timerHud,hud) && timerLabel!=null)return;
   EndMatchTimer(null);timerHud=hud;timerSecond=-1;timerRate=0;timerNext=0;
   var go=TypeByName("UnityEngine.GameObject");var rect=TypeByName("UnityEngine.RectTransform");var text=TypeByName("UnityEngine.UI.Text");
   timerObject=Activator.CreateInstance(go,new object[]{"CFL Match Timer",new Type[]{rect,text}});
@@ -176,7 +177,7 @@ public static partial class CflRuntime {
   var font=resources.GetMethod("GetBuiltinResource",new[]{typeof(Type),typeof(string)}).Invoke(null,new object[]{TypeByName("UnityEngine.Font"),"Arial.ttf"});
   Set(timerLabel,"font",font);Set(timerLabel,"fontSize",26);SetEnumIfChanged(timerLabel,"fontStyle",1);SetEnumIfChanged(timerLabel,"alignment",1);Set(timerLabel,"raycastTarget",false);Set(timerLabel,"text","00:00");
   var outline=timerObject.GetType().GetMethod("AddComponent",new[]{typeof(Type)}).Invoke(timerObject,new object[]{TypeByName("UnityEngine.UI.Outline")});Set(outline,"effectDistance",Vector(1,-1));
-  timerFrameProperty=TypeByName("Carbon.Simulation.IFrameController").GetProperty("LastProcessedSimFrame");InstallRowGapRender();
+  timerFrameProperty=TypeByName("Carbon.Simulation.IFrameController").GetProperty("LastProcessedSimFrame");InstallRowGapRender();Log("Match timer ready: top center, simulation clock");
  }catch(Exception e){Log("Match timer initialization: "+e);EndMatchTimer(null);}}
  public static void EndMatchTimer(object hud){
   if(hud!=null && !Object.ReferenceEquals(timerHud,hud))return;

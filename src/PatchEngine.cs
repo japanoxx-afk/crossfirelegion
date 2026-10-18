@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=21;
+ public const int Revision=22;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -23,7 +23,11 @@ public static class Patcher {
   if(!File.Exists(Path.Combine(game,RelativeDll)))return "게임 경로를 확인하세요.";
   using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(game,RelativeDll)))return Find(a,"Carbon.Simulation.RosterHelper","IsAbilityInRoster").Body.Instructions.Count==2?"이전 표시 전용 패치 · 패치 적용으로 업그레이드하세요":"원본 상태 · 덱 제한 적용 중";
  }
- public static bool NeedsUpgrade(string game){return File.Exists(State(game)) && Json.Deserialize<PatchSet>(File.ReadAllText(State(game))).Revision<Revision;}
+ public static bool NeedsUpgrade(string game){
+  if(!File.Exists(State(game)))return false;var state=Json.Deserialize<PatchSet>(File.ReadAllText(State(game)));if(state.Revision!=Revision)return state.Revision<Revision;
+  var runtime=state.Files.FirstOrDefault(f=>f.Name=="CflRuntime.dll");if(runtime==null)return true;
+  using(var stream=typeof(Patcher).Assembly.GetManifestResourceStream("CflRuntime.dll"))using(var hash=SHA256.Create())return stream==null || runtime.PatchedHash!=BitConverter.ToString(hash.ComputeHash(stream)).Replace("-","").ToLowerInvariant();
+ }
  static void CheckStopped(string game){
   string target=Path.GetFullPath(game).TrimEnd(Path.DirectorySeparatorChar);
   foreach(var process in System.Diagnostics.Process.GetProcessesByName("Crossfire_Legion"))using(process){
@@ -120,7 +124,7 @@ public static class Patcher {
   CheckStopped(game);string dir=Managed(game),statePath=State(game);
   if(File.Exists(statePath)){
    var previous=Json.Deserialize<PatchSet>(File.ReadAllText(statePath));
-   if(previous.Revision<Revision && previous.Files.All(f=>File.Exists(Path.Combine(dir,f.Name))&&Hash(Path.Combine(dir,f.Name))==f.PatchedHash)){Restore(game);Apply(game);return;}
+   if(NeedsUpgrade(game) && previous.Files.All(f=>File.Exists(Path.Combine(dir,f.Name))&&Hash(Path.Combine(dir,f.Name))==f.PatchedHash)){Restore(game);Apply(game);return;}
    throw new Exception("이미 최신 패치가 적용되었거나 복구가 필요합니다. 원본 복원 후 다시 적용하세요.");
   }
   var state=new PatchSet{Revision=Revision};var staged=new Dictionary<string,string>();

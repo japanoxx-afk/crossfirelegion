@@ -25,7 +25,8 @@ public static class SelfTest {
    Require(File.ReadAllText(Path.Combine(Path.GetDirectoryName(dll),"..","boot.config")).Contains("gc-max-time-slice=3"),"Incremental GC startup setting missing");
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
    string statePath=Path.Combine(Path.GetDirectoryName(dll),"CflMod.state.json");string stateText=File.ReadAllText(statePath);
-   var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.WriteAllText(statePath,serializer.Serialize(prior));
+   var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var staleRuntime=serializer.Deserialize<PatchSet>(stateText);staleRuntime.Files.Single(f=>f.Name=="CflRuntime.dll").PatchedHash=new string('0',64);File.WriteAllText(statePath,serializer.Serialize(staleRuntime));Require(Patcher.NeedsUpgrade(test),"동일 개정의 이전 런타임 갱신 감지");File.WriteAllText(statePath,stateText);
+var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.WriteAllText(statePath,serializer.Serialize(prior));
    Require(Patcher.NeedsUpgrade(test),"이전 패치 자동 갱신 감지");File.WriteAllText(statePath,stateText);
    using(var app=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.Application.dll"))){
     var loader=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.ApplicationAssetBundleLoadingState");

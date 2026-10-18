@@ -66,6 +66,7 @@ class RuntimeTests {
   Check(!CflRuntime.AfterRefreshChanged(false,new object()),"Unchanged UI flag changed");
   var korean=new Dictionary<ulong,string>{{23665,"기존 번역"}};CflRuntime.FillKorean(korean,"ko");Check(korean[23707]=="범블비" && korean[23708].Contains("비행선"),"Missing Bumblebee translation");Check(korean[23665]=="기존 번역" && korean[23736].Contains("{0}"),"Existing translation or format placeholder changed");int translatedCount=korean.Count;CflRuntime.FillKorean(korean,"ko");Check(korean.Count==translatedCount,"Localization repeats grew table");var english=new Dictionary<ulong,string>();CflRuntime.FillKorean(english,"en");Check(english.Count==0,"English language changed");
   Check(CflRuntime.MatchTimeText(0)=="00:00" && CflRuntime.MatchTimeText(65)=="01:05" && CflRuntime.MatchTimeText(3600)=="01:00:00" && CflRuntime.MatchTimeText(-1)=="00:00","Match timer formatting failed");
+  var enumTarget=new TimerEnumTarget();typeof(CflRuntime).GetMethod("SetEnumIfChanged",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static).Invoke(null,new object[]{enumTarget,"fontStyle",1});Check(enumTarget.fontStyle==TimerEnumTarget.Style.Bold,"Timer enum property must use a setter, not a field");
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
   var selection=new Selection();for(int i=0;i<25;i++)selection.mProductionButtonScratchpad.Add(Make(i));for(int i=25;i<45;i++)selection.mUpgradeButtonScratchpad.Add(Make(i));selection.mAbilityButtonScratchpad.Add(Make(45));selection.mAbilityButtonScratchpad.Add(Make(1));
@@ -120,3 +121,5 @@ class RuntimeTests {
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
 }
+
+public class TimerEnumTarget {public enum Style {Normal,Bold} public Style fontStyle {get;set;}}

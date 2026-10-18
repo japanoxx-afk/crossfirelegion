@@ -1,4 +1,4 @@
-# crossfirelegion
+﻿# crossfirelegion
 
 Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백업과 원본 복원이 가능한 모든 유닛 생산 패치를 제공합니다.
 
@@ -12,6 +12,12 @@ Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백
 기본 게임 경로: `C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)`
 
 Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포물에 포함하지 않습니다.
+
+## 타이머 수정본 강제 갱신 보완 (v0.2.22)
+
+설치된 개정21 런타임에 fontStyle을 필드로 읽는 초기 코드가 남아 타이머가 생성되지 않았습니다. 속성 설정자 사용을 검증하고 개정22로 올렸습니다. 같은 개정에서도 포함된 런타임 해시가 다르면 검증 후 자동 재적용하도록 보완했습니다. 타이머 생성 성공 로그를 추가하고 같은 HUD의 중복 생성은 생략합니다.
+
+2026-10-19 최근 기록은 incrementalGC=True였고 00:54~01:05의 12개 집계에서 100ms 초과 0회, 최대 82.5ms였습니다. 과거의 반복적인 600~800ms 지연은 해당 구간에서 사라졌습니다. 서로 다른 경기이므로 동일 조건 성능 비교는 아니며 새 코드의 실제 타이머 표시는 추가 확인이 필요합니다.
 
 ## 런처 업데이트 재시도 개선 (v0.2.21)
 
