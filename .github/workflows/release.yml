@@ -19,6 +19,9 @@ jobs:
       - name: Test full roster and command HUD logic
         shell: pwsh
         run: ./scripts/test-runtime.ps1 -Version (Get-Content version.txt -Raw).Trim()
+      - name: Test updater retries and recovery
+        shell: pwsh
+        run: ./scripts/test-updater.ps1
       - name: Publish release
         shell: pwsh
         env:
