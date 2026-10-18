@@ -9,7 +9,7 @@ using System.Linq.Expressions;
 public static partial class CflRuntime {
  public const int Slots=64;
  static readonly BindingFlags Flags=BindingFlags.Public|BindingFlags.NonPublic|BindingFlags.Instance;
- class Access {public PropertyInfo Property;public FieldInfo Field;public MethodInfo Setter;}
+ class Access {public PropertyInfo Property;public FieldInfo Field;public MethodInfo Setter;public Func<object,object> Reader;}
  static readonly ConcurrentDictionary<Type,ConcurrentDictionary<string,Access>> members=new ConcurrentDictionary<Type,ConcurrentDictionary<string,Access>>();
  static readonly ConcurrentDictionary<string,Type> types=new ConcurrentDictionary<string,Type>();
  static readonly ConcurrentDictionary<Type,Func<object,object>> conversions=new ConcurrentDictionary<Type,Func<object,object>>();
@@ -21,9 +21,10 @@ public static partial class CflRuntime {
    var f=t.GetField(name,Flags|BindingFlags.DeclaredOnly);if(f!=null && result.Field==null)result.Field=f;
   }
   if(result.Property==null && result.Field==null)throw new MissingMemberException(type.FullName,name);
+  try{var arg=Expression.Parameter(typeof(object),"instance");Expression read=result.Property!=null?(Expression)Expression.Property(Expression.Convert(arg,result.Property.DeclaringType),result.Property):Expression.Field(Expression.Convert(arg,result.Field.DeclaringType),result.Field);result.Reader=Expression.Lambda<Func<object,object>>(Expression.Convert(read,typeof(object)),arg).Compile();}catch{result.Reader=value=>result.Property!=null?result.Property.GetValue(value,null):result.Field.GetValue(value);}
   return map.GetOrAdd(name,result);
  }
- static object Get(object o,string name){var a=Member(o.GetType(),name);return a.Property!=null?a.Property.GetValue(o,null):a.Field.GetValue(o);}
+ static object Get(object o,string name){var a=Member(o.GetType(),name);return a.Reader(o);}
  static FieldInfo Field(Type t,string name){var field=Member(t,name).Field;if(field==null)throw new MissingFieldException(name);return field;}
  static void Set(object o,string name,object v){var a=Member(o.GetType(),name);if(a.Setter!=null)a.Setter.Invoke(o,new[]{v});else if(a.Field!=null)a.Field.SetValue(o,v);else throw new MissingMethodException("No setter for "+name);}
  static object Resolve(object reference){return conversions.GetOrAdd(reference.GetType(),BuildConversion)(reference);}
@@ -217,15 +218,17 @@ public static partial class CflRuntime {
  }catch(Exception e){Log(e);}}
 
  // Fixed-size counters: no per-frame strings, collections or disk writes.
- static long frameLast,frameStart;static int frameCount,over50,over100,gcStart;static double frameMax;static int gcLast,gcStalls;
+ static long frameLast,frameStart;static int frameCount,over50,over100,gcStart;static double frameMax;static int gcLast,gcStalls;static long lastSpikeLog;static Func<bool> applicationFocused;
  static readonly int[] frameBuckets=new int[501];
  static void SampleFrame(){
   if(unityFrame==null)return;int current=unityFrame();if(current==sampledFrame)return;sampledFrame=current;
   long now=System.Diagnostics.Stopwatch.GetTimestamp();
-  if(frameLast==0){frameLast=frameStart=now;gcLast=gcStart=GC.CollectionCount(0);return;}
+  if(frameLast==0){frameLast=frameStart=now;gcLast=gcStart=GC.CollectionCount(0);
+   try{var app=TypeByName("UnityEngine.Application");applicationFocused=(Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>),app.GetProperty("isFocused").GetGetMethod());var gc=TypeByName("UnityEngine.Scripting.GarbageCollector");Log("Diagnostics v0.2.17: incrementalGC="+gc.GetProperty("isIncremental").GetValue(null,null)+" managedMB="+(GC.GetTotalMemory(false)/1048576));}catch(Exception e){Log("Diagnostics capability: "+e.GetType().Name);}return;}
   double ms=(now-frameLast)*1000.0/System.Diagnostics.Stopwatch.Frequency;frameLast=now;
 
-  int gcNow=GC.CollectionCount(0);if(ms>100 && gcNow!=gcLast)gcStalls++;gcLast=gcNow;
+  int gcNow=GC.CollectionCount(0);if(ms>100 && gcNow!=gcLast)gcStalls++;
+  if(ms>100 && (now-lastSpikeLog)/(double)System.Diagnostics.Stopwatch.Frequency>=1){lastSpikeLog=now;Log("Frame stall: ms="+ms.ToString("F1",System.Globalization.CultureInfo.InvariantCulture)+" gcDelta="+(gcNow-gcLast)+" managedMB="+(GC.GetTotalMemory(false)/1048576)+" focused="+(applicationFocused==null?"unknown":applicationFocused().ToString()));}gcLast=gcNow;
   frameCount++;frameBuckets[Math.Min(500,(int)Math.Ceiling(ms))]++;frameMax=Math.Max(frameMax,ms);if(ms>50)over50++;if(ms>100)over100++;
   if((now-frameStart)/(double)System.Diagnostics.Stopwatch.Frequency<60)return;
   int accumulated=0,p95=0;for(;p95<500;p95++){accumulated+=frameBuckets[p95];if(accumulated>=Math.Ceiling(frameCount*.95))break;}

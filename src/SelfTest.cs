@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.IO;
 using Mono.Cecil;
+using Mono.Cecil.Cil;
 using System.Linq;
 public static class SelfTest {
  static void Require(bool value,string name){if(!value)throw new Exception(name);}
@@ -59,6 +60,11 @@ public static class SelfTest {
    using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Carbon.Presentation.Unity.dll"))){
     var spawn=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Presentation.Unity.CarbonFXSpawner").Methods.Where(m=>m.Name=="SpawnAndHostFXPrefab").ToArray();
     if(spawn.Length!=2 || spawn.Any(m=>!m.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("CombatTextAdditionalScale"))))throw new Exception("Missing combat text extra-scale hook");
+   }
+   using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.UI.dll"))){
+    var position=a.MainModule.Types.Single(t=>t.FullName=="Game.UI.UIAnchoredPanel").Methods.Single(m=>m.Name=="UpdatePosition");
+    if(position.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).Any(x=>x.Previous.OpCode!=OpCodes.Stfld || !x.Previous.Operand.ToString().Contains("mTarget")))throw new Exception("Tooltip hover identity not restored on every return");
+    if(!position.Body.Instructions.Take(3).Any(x=>x.OpCode==OpCodes.Stloc))throw new Exception("Original hover target not saved before layout hook");
    }
    using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Carbon.UI.Unity.dll"))){
     var refresh=a.MainModule.Types.Single(t=>t.FullName=="Carbon.UI.Unity.UIList").Methods.Single(m=>m.Name=="RefreshDataWithoutLinks");

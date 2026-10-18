@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=18;
+ public const int Revision=19;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -59,6 +59,11 @@ public static class Patcher {
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
    var tooltip=Find(a,"Game.UI.UIAnchoredPanel","UpdatePosition");var tipIl=tooltip.Body.GetILProcessor();var tipFirst=tooltip.Body.Instructions[0];tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Ldarg_0));tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Call,Hook(module,"PositionProductionTooltip",1)));
+   // HideTooltip compares its button with mTarget. Change it only during positioning.
+   var targetField=tooltip.DeclaringType.Fields.Single(f=>f.Name=="mTarget");var savedTarget=new VariableDefinition(targetField.FieldType);tooltip.Body.Variables.Add(savedTarget);tooltip.Body.InitLocals=true;
+   var hookStart=tooltip.Body.Instructions[0];tipIl.InsertBefore(hookStart,Instruction.Create(OpCodes.Ldarg_0));tipIl.InsertBefore(hookStart,Instruction.Create(OpCodes.Ldfld,targetField));tipIl.InsertBefore(hookStart,Instruction.Create(OpCodes.Stloc,savedTarget));
+   foreach(var ret in tooltip.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var load=Instruction.Create(OpCodes.Ldloc,savedTarget);tipIl.InsertAfter(ret,load);var restore=Instruction.Create(OpCodes.Stfld,targetField);tipIl.InsertAfter(load,restore);tipIl.InsertAfter(restore,Instruction.Create(OpCodes.Ret));}
+
 
    Intercept(Find(a,"Game.UI.HUDChatPanel","SendMessage"),Hook(module,"TryCheat",1));
    var chatUpdate=Find(a,"Game.UI.HUDChatPanel","Update");
