@@ -131,7 +131,7 @@ public static partial class CflRuntime {
  }
  public static bool AfterRefreshChanged(bool changed,object list){Layout layout;if(changed && layouts.TryGetValue(list,out layout)){AfterRefresh(list);layout.GapPending=true;}return changed;}
  // Run after Unity's native grid rebuild, only for lists dirtied since the last render.
- public static void RenderRowGaps(){SampleFrame();foreach(var layout in layouts.Values){
+ public static void RenderRowGaps(){SampleFrame();UpdateMatchTimer();foreach(var layout in layouts.Values){
   if(!layout.GapPending){if(layout.Gap==0 || layout.Probe==null)continue;try{if(Math.Abs((float)Get(Get(layout.Probe,"anchoredPosition"),"y")-layout.ProbeY)<.01f)continue;}catch{continue;}}layout.GapPending=false;
   try{
    int rows=Math.Max(3,(layout.Count+3)/4),i=0;
@@ -164,6 +164,34 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
+ static object timerHud,timerObject,timerLabel;static long timerNext;static long timerSecond=-1;static double timerRate;static PropertyInfo timerFrameProperty;
+ public static string MatchTimeText(long seconds){seconds=Math.Max(0,seconds);return seconds>=3600?String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}:{2:00}",seconds/3600,(seconds/60)%60,seconds%60):String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}",seconds/60,seconds%60);}
+ public static void BeginMatchTimer(object hud){try{
+  EndMatchTimer(null);timerHud=hud;timerSecond=-1;timerRate=0;timerNext=0;
+  var go=TypeByName("UnityEngine.GameObject");var rect=TypeByName("UnityEngine.RectTransform");var text=TypeByName("UnityEngine.UI.Text");
+  timerObject=Activator.CreateInstance(go,new object[]{"CFL Match Timer",new Type[]{rect,text}});
+  object tr=Get(timerObject,"transform");tr.GetType().GetMethod("SetParent",new[]{TypeByName("UnityEngine.Transform"),typeof(bool)}).Invoke(tr,new object[]{Get(hud,"transform"),false});
+  Set(tr,"anchorMin",Vector(.5f,1));Set(tr,"anchorMax",Vector(.5f,1));Set(tr,"pivot",Vector(.5f,1));Set(tr,"anchoredPosition",Vector(0,-8));Set(tr,"sizeDelta",Vector(160,36));
+  timerLabel=Component(timerObject,text);var resources=TypeByName("UnityEngine.Resources");
+  var font=resources.GetMethod("GetBuiltinResource",new[]{typeof(Type),typeof(string)}).Invoke(null,new object[]{TypeByName("UnityEngine.Font"),"Arial.ttf"});
+  Set(timerLabel,"font",font);Set(timerLabel,"fontSize",26);SetEnumIfChanged(timerLabel,"fontStyle",1);SetEnumIfChanged(timerLabel,"alignment",1);Set(timerLabel,"raycastTarget",false);Set(timerLabel,"text","00:00");
+  var outline=timerObject.GetType().GetMethod("AddComponent",new[]{typeof(Type)}).Invoke(timerObject,new object[]{TypeByName("UnityEngine.UI.Outline")});Set(outline,"effectDistance",Vector(1,-1));
+  timerFrameProperty=TypeByName("Carbon.Simulation.IFrameController").GetProperty("LastProcessedSimFrame");InstallRowGapRender();
+ }catch(Exception e){Log("Match timer initialization: "+e);EndMatchTimer(null);}}
+ public static void EndMatchTimer(object hud){
+  if(hud!=null && !Object.ReferenceEquals(timerHud,hud))return;
+  if(timerObject!=null){var obj=TypeByName("UnityEngine.Object");obj.GetMethod("Destroy",new[]{obj}).Invoke(null,new[]{timerObject});}
+  timerHud=timerObject=timerLabel=null;timerRate=0;timerSecond=-1;
+ }
+ static void UpdateMatchTimer(){
+  if(timerLabel==null)return;long now=System.Diagnostics.Stopwatch.GetTimestamp();if(now<timerNext)return;timerNext=now+System.Diagnostics.Stopwatch.Frequency/4;
+  try{
+   object controller=Get(timerHud,"mSimController");if(controller==null)return;
+   if(timerRate<=0){object ticks=TypeByName("Carbon.Simulation.IFrameController").GetProperty("TicksPerSecond").GetValue(controller,null);timerRate=(double)ticks.GetType().GetMethod("UnsafeDoubleValue",BindingFlags.Static|BindingFlags.Public).Invoke(null,new[]{ticks});if(timerRate<=0)return;}
+   object frame=timerFrameProperty.GetValue(controller,null);long number=Convert.ToInt64(Get(frame,"FrameNumber"));long seconds=(long)(Math.Max(0,number-1)/timerRate);
+   if(seconds==timerSecond)return;timerSecond=seconds;Set(timerLabel,"text",MatchTimeText(seconds));
+  }catch(Exception e){Log("Match timer: "+e);EndMatchTimer(null);}
+ }
  class CombatEffect {public bool Large;}
  static readonly ConditionalWeakTable<object,CombatEffect> combatEffects=new ConditionalWeakTable<object,CombatEffect>();
  public static void PositionProductionTooltip(object tooltip){try{
@@ -190,7 +218,7 @@ public static partial class CflRuntime {
  }catch(Exception e){Log(e);}}
  static Array tipCorners,viewCorners;
  public static bool TooltipFitsAbove(float top,float ceiling,float height,float gap){return top+height+gap<=ceiling;}
- static void SetEnumIfChanged(object target,string name,int value){var field=Field(target.GetType(),name);if(Convert.ToInt32(field.GetValue(target))!=value)field.SetValue(target,Enum.ToObject(field.FieldType,value));}
+ static void SetEnumIfChanged(object target,string name,int value){var access=Member(target.GetType(),name);if(Convert.ToInt32(Get(target,name))!=value)Set(target,name,Enum.ToObject(access.Property!=null?access.Property.PropertyType:access.Field.FieldType,value));}
  static void SetFloatIfChanged(object target,string name,float value){if((float)Get(target,name)!=value)Set(target,name,value);}
  static bool IsLargeCombatText(object attributes){return attributes!=null && combatEffects.GetValue(attributes,ReadCombatEffect).Large;}
  static CombatEffect ReadCombatEffect(object attributes){return new CombatEffect{Large=ReadCombatEffectPath(attributes)};}

@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=20;
+ public const int Revision=21;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -58,6 +58,8 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   var hudSetup=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.SetUp");var hudIl=hudSetup.Body.GetILProcessor();foreach(var ret in hudSetup.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,Hook(module,"BeginMatchTimer",1));hudIl.InsertAfter(ret,call);hudIl.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
+   var hudEnd=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.TearDown");var endIl=hudEnd.Body.GetILProcessor();var endFirst=hudEnd.Body.Instructions[0];endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Ldarg_0));endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Call,Hook(module,"EndMatchTimer",1)));
    var tooltip=Find(a,"Game.UI.UIAnchoredPanel","UpdatePosition");var tipIl=tooltip.Body.GetILProcessor();var tipFirst=tooltip.Body.Instructions[0];tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Ldarg_0));tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Call,Hook(module,"PositionProductionTooltip",1)));
    // HideTooltip compares its button with mTarget. Change it only during positioning.
    var targetField=tooltip.DeclaringType.Fields.Single(f=>f.Name=="mTarget");var savedTarget=new VariableDefinition(targetField.FieldType);tooltip.Body.Variables.Add(savedTarget);tooltip.Body.InitLocals=true;

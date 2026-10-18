@@ -1,4 +1,4 @@
-﻿# crossfirelegion
+# crossfirelegion
 
 Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백업과 원본 복원이 가능한 모든 유닛 생산 패치를 제공합니다.
 
@@ -12,6 +12,10 @@ Crossfire Legion Windows 런처. 한국어 UI, GitHub Releases 업데이트, 백
 기본 게임 경로: `C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)`
 
 Windows 10/11의 .NET Framework 4.8을 사용합니다. 게임 파일은 배포물에 포함하지 않습니다.
+
+## 상단 중앙 경기 타이머 (v0.2.20)
+
+경기 HUD의 상단 중앙에 26 크기의 흰색 경기 시간을 검은 외곽선과 함께 표시합니다. 00:00 형식이며 한 시간 이상은 01:00:00 형식입니다. 시뮬레이션의 LastProcessedSimFrame과 TicksPerSecond를 사용해 일시정지·경기 배속을 반영합니다. HUD 종료 시 제거하고 다음 경기에서 다시 생성합니다. 0.25초 간격으로 확인하고 표시 초가 바뀔 때만 텍스트를 갱신합니다. 클릭을 가로채지 않습니다. 실제 게임 화면 배치는 추가 확인이 필요합니다.
 
 ## 긴 GC 정지 완화를 위한 시작 설정 (v0.2.18)
 
@@ -180,3 +184,4 @@ v0.2.3 위치 검증: 13/17/24/32/33/46/64개 버튼의 하단 HUD 겹침 방지
 이 명령은 `version.txt`를 올리고 커밋·태그·푸시합니다. GitHub Actions가 Windows에서 빌드하고 Release에 런처 ZIP과 업데이트 파일을 게시합니다. 매 변경 배포 시 버전을 증가시켜야 하며, Actions 성공 이후 사용자의 업데이트 버튼에 반영됩니다. GitHub 인증/저장소 쓰기 권한과 Actions 사용 가능 상태가 필요합니다.
 
 빌드 의존성: Mono.Cecil 0.11.6 (MIT). NuGet 패키지의 고정 SHA-256을 검증합니다. 런처 소스와 배포 설정만 Git에 포함하며 게임 DLL, 세이브 및 개인 설정은 포함하지 않습니다.
+
