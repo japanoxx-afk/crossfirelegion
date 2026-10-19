@@ -38,6 +38,8 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
+    var initial=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTimeInitial");Require(initial.Body.Instructions.Any(x=>x.OpCode==OpCodes.Ldc_I4 && (int)x.Operand==600) && initial.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("CommanderInitialDelay")),"Commander 600-second initial cooldown hook");
+    var regular=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTime");Require(regular.Body.Instructions.Count==3 && regular.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Regular cooldown getter changed");
     var fx=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.BoundFXAttribute");
     Require(fx.Methods.Single(m=>m.Name=="get_FXScale").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::CombatTextScale")),"상태 텍스트 크기 후크");
     Require(fx.Methods.Single(m=>m.Name=="get_ScaleToEntitySize").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::CombatTextEntityScale")),"유닛 크기 확대 제한 후크");

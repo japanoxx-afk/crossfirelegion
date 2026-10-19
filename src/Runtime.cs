@@ -164,6 +164,8 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
+ static readonly HashSet<ulong> commanderInitialAbilities=new HashSet<ulong>{2503240030285310045UL,2505926479111310885UL,2497781646663498144UL,2454002138047108637UL,2538863309229101160UL,2537453008226249264UL,364172728036692135UL,2702086817435277841UL,2454349427832025779UL,2472551856768260210UL,2328585381159606472UL,2471814347342139724UL,7077941552477047038UL,2502595789518590345UL,2471795724358627185UL,5636686988173583607UL,2472070902315708373UL,2536696029952809130UL,2471754486308991889UL,2502592923793279809UL};
+ public static bool CommanderInitialDelay(object ability){return commanderInitialAbilities.Contains(Convert.ToUInt64(Get(Get(ability,"ID"),"mBits")));}
  static object timerHud,timerObject,timerLabel;static long timerNext;static long timerSecond=-1;static double timerRate;static PropertyInfo timerFrameProperty;
  public static string MatchTimeText(long seconds){seconds=Math.Max(0,seconds);return seconds>=3600?String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}:{2:00}",seconds/3600,(seconds/60)%60,seconds%60):String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}",seconds/60,seconds%60);}
  public static void BeginMatchTimer(object hud){try{
