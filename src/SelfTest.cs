@@ -11,9 +11,9 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
-   foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);File.Copy(from,to);originals[name]=Patcher.Hash(to);}
+   foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);Directory.CreateDirectory(Path.GetDirectoryName(to));File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
    string original=Patcher.Hash(dll);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
@@ -23,6 +23,8 @@ public static class SelfTest {
    Require(Patcher.IncrementalBootConfig("gc-max-time-slice=9\nother=1\n")=="other=1\r\ngc-max-time-slice=3\r\n","GC setting deduplication");
    Patcher.Apply(test);Require(Patcher.Status(test).Contains("적용됨"),"패치 상태");
    Require(File.ReadAllText(Path.Combine(Path.GetDirectoryName(dll),"..","boot.config")).Contains("gc-max-time-slice=3"),"Incremental GC startup setting missing");
+   VerifyCommanderEnergy(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Attributes.zip")));
+   Require(File.ReadAllText(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Scripts","Source","Multiplayer","Classic","init.lua"))).Contains("actions.SetInventoryValue(commander, global.InventoryCommanderEnergy, 0)"),"Classic mode starting energy not zero");
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
    string statePath=Path.Combine(Path.GetDirectoryName(dll),"CflMod.state.json");string stateText=File.ReadAllText(statePath);
    var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var staleRuntime=serializer.Deserialize<PatchSet>(stateText);staleRuntime.Files.Single(f=>f.Name=="CflRuntime.dll").PatchedHash=new string('0',64);File.WriteAllText(statePath,serializer.Serialize(staleRuntime));Require(Patcher.NeedsUpgrade(test),"동일 개정의 이전 런타임 갱신 감지");File.WriteAllText(statePath,stateText);
@@ -38,7 +40,7 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
-    var initial=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTimeInitial");Require(initial.Body.Instructions.Any(x=>x.OpCode==OpCodes.Ldc_I4 && (int)x.Operand==600) && initial.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("CommanderInitialDelay")),"Commander 600-second initial cooldown hook");
+    var initial=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTimeInitial");Require(initial.Body.Instructions.Count==3 && initial.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Original initial cooldown getter not restored");
     var regular=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTime");Require(regular.Body.Instructions.Count==3 && regular.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Regular cooldown getter changed");
     var fx=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.BoundFXAttribute");
     Require(fx.Methods.Single(m=>m.Name=="get_FXScale").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::CombatTextScale")),"상태 텍스트 크기 후크");
@@ -89,8 +91,27 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, six-DLL and boot.config byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, six-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
  }
+ static void VerifyCommanderEnergy(string file){
+  using(var zip=System.IO.Compression.ZipFile.OpenRead(file)){
+   var collection=EnergyPatch.Read(zip,"Attributes/TrickleAttributesCollection/trickle_commander_default.txt");var entries=((System.Collections.IEnumerable)collection["TrickleEntries"]).Cast<object>().Select(x=>(System.Collections.Generic.Dictionary<string,object>)x).Where(x=>Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)x["InventoryType"])["ReferenceID"])==2315574823061558829L).ToArray();Require(entries.Length==3,"Expected base and two tier bonuses");
+   long[] techs={2339290755542870248L,2339290849844763958L,2339967664248480705L,2339967728677767464L,2340438954731591000L,2340439062029106770L};long first=0x43464c0000000200L;
+   for(int faction=0;faction<3;faction++)for(int tier=1;tier<=3;tier++){
+    // Check the serialized requirements against each faction's completed HQ tech.
+    long owned=tier==1?0:techs[faction*2+tier-2];int rate=0;
+    foreach(var entry in entries){
+     long required=Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)entry["TrickleRequirement"])["ReferenceID"]);bool allowed=required==0;
+     if(required!=0){var rule=EnergyPatch.Read(zip,"Attributes/OrRequirement/cfl_energy_tier"+(required-first-10)+".txt");foreach(object child in (System.Collections.IEnumerable)rule["Requirements"]){long id=Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)child)["ReferenceID"]);var leaf=EnergyPatch.Read(zip,"Attributes/TechCountRequirement/cfl_energy_hq_"+(id-first)+".txt");var check=((System.Collections.IEnumerable)leaf["TechToCheckCollection"]).Cast<object>().Select(x=>(System.Collections.Generic.Dictionary<string,object>)x).Single();Require(Convert.ToInt32(check["TechStateToCheck"])==4 && Convert.ToInt32(check["Operation"])==3 && Convert.ToInt32(check["ValueToUse"])==1,"HQ requirement must check completed >=1");if(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)check["Tech"])["ReferenceID"])==owned)allowed=true;}}
+     if(allowed)rate+=(int)((60L*(1L<<32))/Convert.ToInt64(entry["IntervalLength"]))*Convert.ToInt32(entry["Amount"]);
+    }Require(rate==tier+3,"Commander energy per-minute rate incorrect");
+   }
+   foreach(string name in new[]{"ila_default_commander","ila_battlelines_commander"}){
+    var loadout=EnergyPatch.Read(zip,"Attributes/InventoryLoadoutAttributes/"+name+".txt");var inventories=(System.Collections.Generic.Dictionary<string,object>)loadout["Inventories"];foreach(object item in (System.Collections.IEnumerable)inventories["Items"]){var inventory=(System.Collections.Generic.Dictionary<string,object>)item;if(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)inventory["InventoryID"])["ReferenceID"])==2315574823061558829L)Require(Convert.ToInt64(inventory["StartingAmount"])==0,"Starting commander energy incorrect");}
+   }
+  }
+ }
+
 }

@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=23;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config"};
+ public const int Revision=24;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -52,10 +52,6 @@ public static class Patcher {
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
   if(name=="Carbon.Simulation.dll"){
-   var initial=Find(a,"Carbon.Simulation.Data.AbilityAttributes","get_CooldownTimeInitial");var initialIl=initial.Body.GetILProcessor();var initialFirst=initial.Body.Instructions[0];
-   var fromInt=initial.ReturnType.Resolve().Methods.Single(m=>m.Name=="FromInt" && m.Parameters.Count==1 && m.Parameters[0].ParameterType.MetadataType==MetadataType.Int32);
-   var initialHook=Hook(module,"CommanderInitialDelay",1);initialHook.ReturnType=module.TypeSystem.Boolean;
-   initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Ldarg_0));initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Call,initialHook));initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Brfalse,initialFirst));initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Ldc_I4,600));initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Call,module.ImportReference(fromInt)));initialIl.InsertBefore(initialFirst,Instruction.Create(OpCodes.Ret));
    FilterResult(Find(a,"Carbon.Simulation.Data.BoundFXAttribute","get_FXScale"),Hook(module,"CombatTextScale",0));
    FilterResult(Find(a,"Carbon.Simulation.Data.BoundFXAttribute","get_ScaleToEntitySize"),Hook(module,"CombatTextEntityScale",0));
    Intercept(Find(a,"Carbon.Simulation.ExecuteScriptCommand","Execute"),Hook(module,"ExecuteCheat",2));
@@ -143,8 +139,8 @@ public static class Patcher {
      source=backup;
     }
     string temp=Path.Combine(stage,Path.GetFileName(name));
-    if(name=="..\\boot.config")File.WriteAllText(temp,IncrementalBootConfig(File.ReadAllText(source)),new System.Text.UTF8Encoding(false));else Rewrite(name,source,temp);
-    if(name!="..\\boot.config")using(var verify=AssemblyDefinition.ReadAssembly(temp)){if(!verify.MainModule.AssemblyReferences.Any(r=>r.Name=="CflRuntime"))throw new Exception("패치 후크 검증 실패: "+name);}
+    if(name=="..\\boot.config")File.WriteAllText(temp,IncrementalBootConfig(File.ReadAllText(source)),new System.Text.UTF8Encoding(false));else if(name=="..\\..\\Data\\Attributes.zip")EnergyPatch.Rewrite(source,temp);else if(name.EndsWith("init.lua",StringComparison.Ordinal))File.WriteAllText(temp,EnergyPatch.ClassicScript(File.ReadAllText(source)),new System.Text.UTF8Encoding(false));else Rewrite(name,source,temp);
+    if(name!="..\\boot.config" && name!="..\\..\\Data\\Attributes.zip" && !name.EndsWith("init.lua",StringComparison.Ordinal))using(var verify=AssemblyDefinition.ReadAssembly(temp)){if(!verify.MainModule.AssemblyReferences.Any(r=>r.Name=="CflRuntime"))throw new Exception("패치 후크 검증 실패: "+name);}
     state.Files.Add(new PatchFile{Name=name,OriginalHash=Hash(source),PatchedHash=Hash(temp),PreviousHash=Hash(target)});staged[name]=temp;
    }
    string runtime=Path.Combine(stage,"CflRuntime.dll");

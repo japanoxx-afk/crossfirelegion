@@ -67,8 +67,6 @@ class RuntimeTests {
   var korean=new Dictionary<ulong,string>{{23665,"기존 번역"}};CflRuntime.FillKorean(korean,"ko");Check(korean[23707]=="범블비" && korean[23708].Contains("비행선"),"Missing Bumblebee translation");Check(korean[23665]=="기존 번역" && korean[23736].Contains("{0}"),"Existing translation or format placeholder changed");int translatedCount=korean.Count;CflRuntime.FillKorean(korean,"ko");Check(korean.Count==translatedCount,"Localization repeats grew table");var english=new Dictionary<ulong,string>();CflRuntime.FillKorean(english,"en");Check(english.Count==0,"English language changed");
   Check(CflRuntime.MatchTimeText(0)=="00:00" && CflRuntime.MatchTimeText(65)=="01:05" && CflRuntime.MatchTimeText(3600)=="01:00:00" && CflRuntime.MatchTimeText(-1)=="00:00","Match timer formatting failed");
   var enumTarget=new TimerEnumTarget();typeof(CflRuntime).GetMethod("SetEnumIfChanged",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static).Invoke(null,new object[]{enumTarget,"fontStyle",1});Check(enumTarget.fontStyle==TimerEnumTarget.Style.Bold,"Timer enum property must use a setter, not a field");
-  Check(CflRuntime.CommanderInitialDelay(new CooldownAbility{ID=new CooldownId{mBits=2503240030285310045UL}}),"Commander initial cooldown not selected");Check(!CflRuntime.CommanderInitialDelay(new CooldownAbility{ID=new CooldownId{mBits=1}}),"Unrelated unit cooldown selected");
-  var initialIds=(HashSet<ulong>)typeof(CflRuntime).GetField("commanderInitialAbilities",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Static).GetValue(null);Check(initialIds.Count==20,"Expected 20 commander skills");foreach(ulong id in initialIds)Check(CflRuntime.CommanderInitialDelay(new CooldownAbility{ID=new CooldownId{mBits=id}}),"Commander skill omitted");
   var shared=new Item{ID=2};var category=new Category{RosterSlots=new List<Slot>{new Slot{Items=new[]{new Reference<Item>{Value=new Item{ID=1}},new Reference<Item>{Value=shared}}},new Slot{Items=new[]{new Reference<Item>{Value=shared},new Reference<Item>{Value=new Item{ID=3}}}}}};
   var roster=new List<Loadout>();CflRuntime.FillAll(category,roster);Check(roster.Count==3 && roster[2].RosterItem.ID==3,"All alternatives registered once");
   var selection=new Selection();for(int i=0;i<25;i++)selection.mProductionButtonScratchpad.Add(Make(i));for(int i=25;i<45;i++)selection.mUpgradeButtonScratchpad.Add(Make(i));selection.mAbilityButtonScratchpad.Add(Make(45));selection.mAbilityButtonScratchpad.Add(Make(1));
@@ -125,6 +123,3 @@ class RuntimeTests {
 }
 
 public class TimerEnumTarget {public enum Style {Normal,Bold} public Style fontStyle {get;set;}}
-
-public class CooldownAbility{public CooldownId ID;}
-public struct CooldownId{public ulong mBits;}
