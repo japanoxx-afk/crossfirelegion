@@ -1,5 +1,13 @@
 # 시작 로딩 분석 — v0.2.27
 
+## 시작 조회 생략 및 세부 초기화 추적 — v0.2.30
+
+사용자 요청에 따라 시작 시 상품 목록 조회를 생략한다. MPAuthFlowState.OnAuthenticationStatus의 GetMarketCatalog 호출 1곳만 변경했다. SteamMarketService.Catalog에 원래 실패 시 쓰는 빈 SteamMarketCatalog를 설정하고 이미 구독된 OnMarketCatalogRetrieved에 통지한다. 이후 원래 MPAuthFlowState.OnMarketCatalogRetrieved가 인벤토리 조회를 시작한다. 인벤토리 Load가 Catalog.GetItem을 통해 아이템을 해석하는 의존성을 확인했다. 따라서 로컬 ProfileItemAttributes의 MarketItemID/ID를 별도의 대응표로 유지하고 빈 목록 카탈로그의 ID/속성 ID/통화 조회에만 대체 값을 제공한다. Items/VirtualCurrencies 표시 목록은 비워 두며 실제 SDK 인벤토리 응답 및 기존 AlwaysOwned 처리만 소유권을 결정한다. 없는 ID는 null로 유지한다. Steam 인증·프로필·인벤토리 경로와 독립적인 상점 조회 메서드는 유지한다. 실제 서비스 객체를 null Runner로 생성한 복사본 테스트에서 빈 목록/공개 Catalog/완료 이벤트 1회 전달을 확인했으며, Steam 연결을 요청하지 않았다. 이전 상품 대기 90초 또는 v0.2.29의 최대 15초를 시작 경로에서 제거하는 변경이다. 새 버전의 전체 메뉴 도달 시간은 미측정이다.
+
+장면 코드를 조사해 MainComponent의 자식 장면 순차 로딩과 SceneLoader의 재귀 코루틴을 확인했다. 순서를 강제로 바꾸거나 병렬화하면 Awake/Start 및 UI 계층 조립의 의존성이 달라질 수 있어 유지했다. 대신 시작 중 동일 SceneLoader·동일 목록의 완료된 반복 실행만 생략한다. 실패/취소/목록 변경은 재실행한다. 메뉴 이후는 원래 로딩을 그대로 반환한다. 실제 중복이 발생하지 않으면 이 부분의 시간 절약은 없다. 테스트 코루틴으로 yield·완료·재시도·메뉴 이후 경로를 검증했다.
+
+ServiceContext.GetDependencies는 이미 타입별 캐시를 사용하고 있었다. 캐시를 추가해 4.5~9초를 줄일 수 있다는 근거는 없었다. 어떤 서비스의 SetUp/PostSetUp이 오래 걸리는지와 OrcaUI.SetupFE/BootflowServicesBindState.BindServices 범위를 기록하도록 했다. 이는 남은 병목을 측정하는 변경이며 서비스 초기화 시간이 단축됐다는 의미는 아니다. 초기화 호출 목록과 순서는 복사본의 원본 IL과 비교했다.
+
 ## 후속 진단 및 수정 — v0.2.29
 
 2026-10-22 01:49:03 실행에서 메뉴 상태 진입까지 119.989초가 기록됐다. 이 중 상품 목록 요청은 01:49:32.204~01:51:02.211, 90.007초였다. 인증은 0.058초, 인벤토리는 0.887초, 프로필은 0.017초, 통계는 0.043초, 경기 기록은 0.031초였다. 상품 목록이 전체의 약 75%를 차지했다. 앞선 01:40 실행의 상품 목록은 0.608초였으므로 초기 장면/서비스 초기화와 구분되는 간헐적 대기다.

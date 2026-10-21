@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=29;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+ public const int Revision=30;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -78,7 +78,16 @@ public static class Patcher {
  }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
+  if(name=="Carbon.Core.dll"){
+   foreach(string methodName in new[]{"InitSetUp","InitPostSetUp"}){var method=Find(a,"Carbon.Core.Services.ServiceContext",methodName);var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];var begin=Hook(module,"StartupServiceBegin",1);begin.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));var end=Hook(module,"StartupServiceEnd",1);end.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_1));il.InsertBefore(first,Instruction.Create(OpCodes.Ldstr,methodName));il.InsertBefore(first,Instruction.Create(OpCodes.Call,begin));foreach(var ret in method.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_1;var phase=Instruction.Create(OpCodes.Ldstr,methodName);il.InsertAfter(ret,phase);var call=Instruction.Create(OpCodes.Call,end);il.InsertAfter(phase,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}ExpandBranches(method);}
+  }
   if(name=="Systems.Online.Steam.dll"){
+   foreach(string nameLookup in new[]{"GetItem","GetItemByAttributeID","GetVirtualCurrencyItem"}){
+    var lookup=Find(a,"Systems.Online.Steam.Market.SteamMarketCatalog",nameLookup);var li=lookup.Body.GetILProcessor();var fallback=Hook(module,nameLookup=="GetVirtualCurrencyItem"?"LocalInventoryCurrency":"LocalInventoryItem",3);fallback.ReturnType=module.TypeSystem.Object;
+    foreach(var ret in lookup.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){
+     ret.OpCode=OpCodes.Dup;var finish=Instruction.Create(OpCodes.Ret);var branch=Instruction.Create(OpCodes.Brtrue,finish);li.InsertAfter(ret,branch);var owner=Instruction.Create(OpCodes.Ldarg_0);li.InsertAfter(branch,owner);var key=Instruction.Create(OpCodes.Ldarg_1);li.InsertAfter(owner,key);Instruction previous=key;if(lookup.Parameters[0].ParameterType.IsValueType){var box=Instruction.Create(OpCodes.Box,lookup.Parameters[0].ParameterType);li.InsertAfter(key,box);previous=box;}var call=Instruction.Create(OpCodes.Call,fallback);li.InsertAfter(previous,call);var cast=Instruction.Create(OpCodes.Castclass,lookup.ReturnType);li.InsertAfter(call,cast);li.InsertAfter(cast,finish);
+    }ExpandBranches(lookup);
+   }
    var timeout=a.MainModule.Types.Single(t=>t.FullName=="Systems.Online.Steam.SteamTask").Fields.Single(f=>f.Name=="mTaskTimeout");
    var task=Find(a,"Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask",".ctor");var il=task.Body.GetILProcessor();
    foreach(var ret in task.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var value=Instruction.Create(OpCodes.Ldc_R4,15f);il.InsertAfter(ret,value);var store=Instruction.Create(OpCodes.Stfld,timeout);il.InsertAfter(value,store);var log=Instruction.Create(OpCodes.Call,Hook(module,"CatalogTimeoutPolicy",0));il.InsertAfter(store,log);il.InsertAfter(log,Instruction.Create(OpCodes.Ret));}
@@ -96,6 +105,7 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   FilterResult(Find(a,"Game.UI.SceneLoader","LoadScenes"),Hook(module,"LoadStartupScenesOnce",0));TraceStartupCalls(Find(a,"Game.UI.OrcaUI","SetupFE"));TraceStartupMethod(Find(a,"Game.UI.OrcaUI","SetupFE"));
    TraceStartupMethod(Find(a,"Game.UI.FrontEnd","Carbon.Core.Services.ISetUp.SetUp"));
    var hudSetup=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.SetUp");var hudIl=hudSetup.Body.GetILProcessor();foreach(var ret in hudSetup.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,Hook(module,"BeginMatchTimer",1));hudIl.InsertAfter(ret,call);hudIl.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
    var hudEnd=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.TearDown");var endIl=hudEnd.Body.GetILProcessor();var endFirst=hudEnd.Body.Instructions[0];endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Ldarg_0));endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Call,Hook(module,"EndMatchTimer",1)));
@@ -145,6 +155,8 @@ public static class Patcher {
   }
   if(name=="Game.Application.dll"){
 
+   var catalogCall=Find(a,"Game.Application.Layers.MPAuthFlowState","OnAuthenticationStatus").Body.Instructions.Single(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="GetMarketCatalog");catalogCall.OpCode=OpCodes.Call;var skip=Hook(module,"SkipStartupMarket",1);skip.ReturnType=module.TypeSystem.Boolean;catalogCall.Operand=skip;
+   TraceStartupCalls(Find(a,"Game.Application.Layers.BootflowServicesBindState","BindServices"));TraceStartupMethod(Find(a,"Game.Application.Layers.BootflowServicesBindState","BindServices"));
    foreach(string type in new[]{"Game.Application.MainComponent","Game.Application.Main","Game.Application.Layers.GlobalServiceInitState","Game.Application.Layers.BootflowServicesInitState","Game.Application.Layers.ApplicationAssetBundleLoadingState","Game.Application.Layers.MPAuthFlowState"}){
     foreach(var method in a.MainModule.Types.Single(t=>t.FullName==type).Methods.Where(m=>m.HasBody && (m.Name=="Awake" || m.Name=="Startup" || m.Name.StartsWith("Setup",StringComparison.Ordinal) || m.Name=="OnEnter" || m.Name=="OnAllLoadsCompleted" || m.Name=="OnAuthenticationStatus" || m.Name=="OnMarketCatalogRetrieved" || m.Name=="OnInventoryRetrieved"))){TraceStartupCalls(method);TraceStartupMethod(method);}
    }

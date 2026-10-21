@@ -11,7 +11,7 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
    foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);Directory.CreateDirectory(Path.GetDirectoryName(to));File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
@@ -44,15 +44,23 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
     Require(services.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("SteamServiceProvider")),"Steam initialization timing missing");
     Require(services.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("ITelemetryService::Init")),"Telemetry initialization timing missing");
     var auth=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.MPAuthFlowState");
+    var authStatus=auth.Methods.Single(m=>m.Name=="OnAuthenticationStatus");Require(authStatus.Body.Instructions.Any(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="SkipStartupMarket") && !authStatus.Body.Instructions.Any(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="GetMarketCatalog"),"Startup shop request must be skipped");
     Require(auth.Methods.Single(m=>m.Name=="OnEnter").Body.Instructions.Count(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="AuthenticateSession")==1,"Native authentication must run exactly once");
     Require(auth.Methods.Single(m=>m.Name=="HandleDeferredLobbyCallbacks").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("RetrieveMatchHistory")),"Profile/history timings missing");
     using(var originalApp=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.Application.dll.cfl-original"))){
      foreach(var type in app.MainModule.Types)foreach(var method in type.Methods.Where(m=>m.HasBody && m.Body.Instructions.Any(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).DeclaringType.Name=="CflRuntime"))){
       var before=originalApp.MainModule.Types.Single(t=>t.FullName==type.FullName).Methods.Single(m=>m.FullName==method.FullName);
-      var nativeCalls=before.Body.Instructions.Where(i=>i.Operand is MethodReference).Select(i=>i.Operand.ToString());
+      var nativeCalls=before.Body.Instructions.Where(i=>i.Operand is MethodReference).Select(i=>i.Operand.ToString()).Where(text=>!(type.Name=="MPAuthFlowState" && method.Name=="OnAuthenticationStatus" && text.Contains("::GetMarketCatalog()")));
       var afterCalls=method.Body.Instructions.Where(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).DeclaringType.Name!="CflRuntime").Select(i=>i.Operand.ToString());
       Require(nativeCalls.SequenceEqual(afterCalls) && before.Body.ExceptionHandlers.Count==method.Body.ExceptionHandlers.Count,"Startup native calls/exception handlers changed: "+method.FullName);
      }
+    }
+   }
+   using(var core=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Carbon.Core.dll")))using(var beforeCore=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Carbon.Core.dll.cfl-original"))){
+    foreach(string name in new[]{"InitSetUp","InitPostSetUp"}){
+     var method=core.MainModule.Types.Single(t=>t.FullName=="Carbon.Core.Services.ServiceContext").Methods.Single(m=>m.Name==name);var before=beforeCore.MainModule.Types.Single(t=>t.FullName=="Carbon.Core.Services.ServiceContext").Methods.Single(m=>m.Name==name);
+     Require(method.Body.Instructions.Any(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="StartupServiceBegin"),"Concrete service timing hook missing");
+     Require(before.Body.Instructions.Where(i=>i.Operand is MethodReference).Select(i=>i.Operand.ToString()).SequenceEqual(method.Body.Instructions.Where(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).DeclaringType.Name!="CflRuntime").Select(i=>i.Operand.ToString())),"Native service setup order changed");
     }
    }
    bool blocked=false;try{Patcher.Apply(test);}catch{blocked=true;}Require(blocked,"중복 적용 차단");
@@ -112,7 +120,7 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, seven-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, eight-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
  }
@@ -129,19 +137,34 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
   string path=Path.Combine(managed,"Systems.Online.Steam.dll");
   using(var patched=AssemblyDefinition.ReadAssembly(path))using(var original=AssemblyDefinition.ReadAssembly(path+".cfl-original")){
    foreach(var type in original.MainModule.Types)foreach(var method in type.Methods.Where(m=>m.HasBody)){
+    if(type.FullName=="Systems.Online.Steam.Market.SteamMarketCatalog" && new[]{"GetItem","GetItemByAttributeID","GetVirtualCurrencyItem"}.Contains(method.Name))continue;
     if(type.FullName=="Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask" && method.Name==".ctor")continue;
     if(type.FullName=="Systems.Online.Steam.Market.SteamMarketService" && method.Name=="HandleMarketCatalogRetrieved")continue;
     var after=patched.MainModule.Types.Single(t=>t.FullName==type.FullName).Methods.Single(m=>m.FullName==method.FullName);
     Require(method.Body.Instructions.Select(i=>i.ToString()).SequenceEqual(after.Body.Instructions.Select(i=>i.ToString())),"Unrelated Steam task changed: "+method.FullName);
    }
   }
-  ResolveEventHandler resolve=(sender,args)=>{string dependency=Path.Combine(managed,new System.Reflection.AssemblyName(args.Name).Name+".dll");return File.Exists(dependency)?System.Reflection.Assembly.Load(File.ReadAllBytes(dependency)):null;};
+  var loaded=new System.Collections.Generic.Dictionary<string,System.Reflection.Assembly>();ResolveEventHandler resolve=(sender,args)=>{string name=new System.Reflection.AssemblyName(args.Name).Name;System.Reflection.Assembly cached;if(loaded.TryGetValue(name,out cached))return cached;string dependency=Path.Combine(managed,name+".dll");if(!File.Exists(dependency))return null;cached=System.Reflection.Assembly.Load(File.ReadAllBytes(dependency));loaded[name]=cached;return cached;};
   AppDomain.CurrentDomain.AssemblyResolve+=resolve;
   try{
    var assembly=System.Reflection.Assembly.Load(File.ReadAllBytes(path));var type=assembly.GetType("Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask",true);
    var task=Activator.CreateInstance(type,new object[]{null,null});Require(Convert.ToSingle(type.GetProperty("TaskTimeout").GetValue(task,null))==15f,"Real market task timeout must be 15 seconds");
    var other=assembly.GetType("Systems.Online.Steam.SteamTask`1",true).MakeGenericType(typeof(object));var ordinary=Activator.CreateInstance(other,new object[]{null});Require(Convert.ToSingle(other.GetProperty("TaskTimeout").GetValue(ordinary,null))==90f,"Other Steam task timeout changed");
+   var serviceType=assembly.GetType("Systems.Online.Steam.Market.SteamMarketService",true);var service=Activator.CreateInstance(serviceType,new object[]{null});int callbacks=0;object published=null;
+   var databaseProperty=serviceType.GetProperty("AttributeDatabase");databaseProperty.SetValue(service,Activator.CreateInstance(databaseProperty.PropertyType.Assembly.GetType("Carbon.Attributes.AttributeDatabase",true)),null);
+   Action<object> received=value=>{callbacks++;published=value;};var marketEvent=serviceType.GetEvent("OnMarketCatalogRetrieved");var parameter=System.Linq.Expressions.Expression.Parameter(marketEvent.EventHandlerType.GetMethod("Invoke").GetParameters()[0].ParameterType,"catalog");
+   var action=System.Linq.Expressions.Expression.Invoke(System.Linq.Expressions.Expression.Constant(received),System.Linq.Expressions.Expression.Convert(parameter,typeof(object)));marketEvent.AddEventHandler(service,System.Linq.Expressions.Expression.Lambda(marketEvent.EventHandlerType,action,parameter).Compile());
+   var runtime=System.Reflection.Assembly.Load("CflRuntime").GetType("CflRuntime",true);Require((bool)runtime.GetMethod("SkipStartupMarket").Invoke(null,new[]{service}),"Actual startup skip returned failure");
+   var catalog=serviceType.GetProperty("Catalog").GetValue(service,null);Require(callbacks==1 && Object.ReferenceEquals(catalog,published) && catalog!=null,"Actual market callback/catalog state incorrect");Require(!((System.Collections.IEnumerable)catalog.GetType().GetProperty("Items").GetValue(catalog,null)).Cast<object>().Any(),"Skipped catalog must contain no priced items");
+   var metadata=new object[]{new CatalogMetadataFixture{ID="owned-unit",MarketItemID=23},new ProfileCurrencyItemAttributes{ID="currency",MarketItemID=24}};runtime.GetMethod("RegisterLocalInventoryMetadata").Invoke(null,new object[]{catalog,metadata,assembly.GetType("Systems.Online.Steam.Market.SteamMarketItem",true)});
+   var lookup=catalog.GetType().GetMethod("GetItem");var key=Activator.CreateInstance(lookup.GetParameters()[0].ParameterType,new object[]{23});var item=lookup.Invoke(catalog,new[]{key});Require(item!=null && (string)item.GetType().GetProperty("AttributeID").GetValue(item,null)=="owned-unit","Local inventory ID mapping failed; direct="+(runtime.GetMethod("LocalInventoryItem").Invoke(null,new object[]{null,catalog,key})!=null)+" runtime assemblies="+AppDomain.CurrentDomain.GetAssemblies().Count(x=>x.GetName().Name=="CflRuntime"));Require(Object.ReferenceEquals(item,catalog.GetType().GetMethod("GetItemByAttributeID").Invoke(catalog,new object[]{"owned-unit"})),"Local attribute lookup failed");Require(catalog.GetType().GetMethod("GetVirtualCurrencyItem").Invoke(catalog,new[]{key})==null,"Non-currency item returned as currency");
+   var currencyKey=Activator.CreateInstance(lookup.GetParameters()[0].ParameterType,new object[]{24});Require(catalog.GetType().GetMethod("GetVirtualCurrencyItem").Invoke(catalog,new[]{currencyKey})!=null,"Local currency lookup failed");Require(!((System.Collections.IEnumerable)catalog.GetType().GetProperty("Items").GetValue(catalog,null)).Cast<object>().Any(),"Inventory metadata leaked into skipped shop");
   }finally{AppDomain.CurrentDomain.AssemblyResolve-=resolve;}
  }
 
 }
+
+
+
+public class CatalogMetadataFixture {public string ID;public int MarketItemID;}
+public class ProfileCurrencyItemAttributes:CatalogMetadataFixture {}
