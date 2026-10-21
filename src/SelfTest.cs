@@ -23,6 +23,7 @@ public static class SelfTest {
    Require(Patcher.IncrementalBootConfig("gc-max-time-slice=9\nother=1\n")=="other=1\r\ngc-max-time-slice=3\r\n","GC setting deduplication");
    Patcher.Apply(test);Require(Patcher.Status(test).Contains("적용됨"),"패치 상태");
    Require(File.ReadAllText(Path.Combine(Path.GetDirectoryName(dll),"..","boot.config")).Contains("gc-max-time-slice=3"),"Incremental GC startup setting missing");
+   Require(File.ReadAllText(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Scripts","Source","Multiplayer","Classic","init.lua"))).Contains("CFL_Energy_Start"),"Simulation timer script missing");
    VerifyCommanderEnergy(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Attributes.zip")));
    Require(File.ReadAllText(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Scripts","Source","Multiplayer","Classic","init.lua"))).Contains("actions.SetInventoryValue(commander, global.InventoryCommanderEnergy, 0)"),"Classic mode starting energy not zero");
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
@@ -40,8 +41,6 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
-    var spawnEnergy=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.TrickleInitializer").Methods.Single(m=>m.Name=="Initializer");Require(spawnEnergy.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("ConfigureSpawnEnergy")),"Commander spawn energy hook missing");
-    var levelEnergy=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.LevelAttributes").Methods.Single(m=>m.Name=="get_DefaultCommanderTrickle");Require(levelEnergy.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("ConfigureLevelEnergy")),"Actual map commander energy hook missing");
     var skillTech=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_RequiredTech");Require(skillTech.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("CommanderSkillTech")),"Second commander skill HQ3 requirement hook missing");
     var initial=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTimeInitial");Require(initial.Body.Instructions.Count==3 && initial.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Original initial cooldown getter not restored");
     var regular=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTime");Require(regular.Body.Instructions.Count==3 && regular.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Regular cooldown getter changed");
@@ -100,17 +99,8 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
  }
  static void VerifyCommanderEnergy(string file){
   using(var zip=System.IO.Compression.ZipFile.OpenRead(file)){
-   var collection=EnergyPatch.Read(zip,"Attributes/TrickleAttributesCollection/trickle_commander_default.txt");var entries=((System.Collections.IEnumerable)collection["TrickleEntries"]).Cast<object>().Select(x=>(System.Collections.Generic.Dictionary<string,object>)x).Where(x=>Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)x["InventoryType"])["ReferenceID"])==2315574823061558829L).ToArray();Require(entries.Length==3,"Expected base and two tier bonuses");
-   long[] techs={2339290755542870248L,2339290849844763958L,2339967664248480705L,2339967728677767464L,2340438954731591000L,2340439062029106770L};long first=0x43464c0000000200L;
-   for(int faction=0;faction<3;faction++)for(int tier=1;tier<=3;tier++){
-    // Check the serialized requirements against each faction's completed HQ tech.
-    long owned=tier==1?0:techs[faction*2+tier-2];int rate=0;
-    foreach(var entry in entries){
-     long required=Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)entry["TrickleRequirement"])["ReferenceID"]);bool allowed=required==0;
-     if(required!=0){var rule=EnergyPatch.Read(zip,"Attributes/OrRequirement/cfl_energy_tier"+(required-first-10)+".txt");foreach(object child in (System.Collections.IEnumerable)rule["Requirements"]){long id=Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)child)["ReferenceID"]);var leaf=EnergyPatch.Read(zip,"Attributes/TechCountRequirement/cfl_energy_hq_"+(id-first)+".txt");var check=((System.Collections.IEnumerable)leaf["TechToCheckCollection"]).Cast<object>().Select(x=>(System.Collections.Generic.Dictionary<string,object>)x).Single();Require(Convert.ToInt32(check["TechStateToCheck"])==4 && Convert.ToInt32(check["Operation"])==3 && Convert.ToInt32(check["ValueToUse"])==1,"HQ requirement must check completed >=1");if(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)check["Tech"])["ReferenceID"])==owned)allowed=true;}}
-     if(allowed)rate+=(int)((60L*(1L<<32))/Convert.ToInt64(entry["IntervalLength"]))*Convert.ToInt32(entry["Amount"]);
-    }Require(rate==tier+3,"Commander energy per-minute rate incorrect");
-   }
+   var collection=EnergyPatch.Read(zip,"Attributes/TrickleAttributesCollection/trickle_commander_default.txt");var entries=((System.Collections.IEnumerable)collection["TrickleEntries"]).Cast<object>().Select(x=>(System.Collections.Generic.Dictionary<string,object>)x).Where(x=>Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)x["InventoryType"])["ReferenceID"])==2315574823061558829L).ToArray();
+   Require(entries.Length==1 && Convert.ToInt32(entries[0]["Amount"])==0,"Legacy passive energy must not double-credit script income");
    foreach(string name in new[]{"ila_default_commander","ila_battlelines_commander"}){
     var loadout=EnergyPatch.Read(zip,"Attributes/InventoryLoadoutAttributes/"+name+".txt");var inventories=(System.Collections.Generic.Dictionary<string,object>)loadout["Inventories"];foreach(object item in (System.Collections.IEnumerable)inventories["Items"]){var inventory=(System.Collections.Generic.Dictionary<string,object>)item;if(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)inventory["InventoryID"])["ReferenceID"])==2315574823061558829L)Require(Convert.ToInt64(inventory["StartingAmount"])==0,"Starting commander energy incorrect");}
    }
