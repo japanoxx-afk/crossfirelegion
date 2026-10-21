@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -11,7 +11,7 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
    foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);Directory.CreateDirectory(Path.GetDirectoryName(to));File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
@@ -27,6 +27,7 @@ public static class SelfTest {
    VerifyCommanderEnergy(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Attributes.zip")));
    Require(File.ReadAllText(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(dll),"..","..","Data","Scripts","Source","Multiplayer","Classic","init.lua"))).Contains("actions.SetInventoryValue(commander, global.InventoryCommanderEnergy, 0)"),"Classic mode starting energy not zero");
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
+   VerifyCatalogTimeout(Path.GetDirectoryName(dll));
    string statePath=Path.Combine(Path.GetDirectoryName(dll),"CflMod.state.json");string stateText=File.ReadAllText(statePath);
    var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();var staleRuntime=serializer.Deserialize<PatchSet>(stateText);staleRuntime.Files.Single(f=>f.Name=="CflRuntime.dll").PatchedHash=new string('0',64);File.WriteAllText(statePath,serializer.Serialize(staleRuntime));Require(Patcher.NeedsUpgrade(test),"동일 개정의 이전 런타임 갱신 감지");File.WriteAllText(statePath,stateText);
 var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.WriteAllText(statePath,serializer.Serialize(prior));
@@ -111,7 +112,7 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, six-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, seven-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
  }
@@ -123,6 +124,24 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
     var loadout=EnergyPatch.Read(zip,"Attributes/InventoryLoadoutAttributes/"+name+".txt");var inventories=(System.Collections.Generic.Dictionary<string,object>)loadout["Inventories"];foreach(object item in (System.Collections.IEnumerable)inventories["Items"]){var inventory=(System.Collections.Generic.Dictionary<string,object>)item;if(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)inventory["InventoryID"])["ReferenceID"])==2315574823061558829L)Require(Convert.ToInt64(inventory["StartingAmount"])==0,"Starting commander energy incorrect");}
    }
   }
+ }
+ static void VerifyCatalogTimeout(string managed){
+  string path=Path.Combine(managed,"Systems.Online.Steam.dll");
+  using(var patched=AssemblyDefinition.ReadAssembly(path))using(var original=AssemblyDefinition.ReadAssembly(path+".cfl-original")){
+   foreach(var type in original.MainModule.Types)foreach(var method in type.Methods.Where(m=>m.HasBody)){
+    if(type.FullName=="Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask" && method.Name==".ctor")continue;
+    if(type.FullName=="Systems.Online.Steam.Market.SteamMarketService" && method.Name=="HandleMarketCatalogRetrieved")continue;
+    var after=patched.MainModule.Types.Single(t=>t.FullName==type.FullName).Methods.Single(m=>m.FullName==method.FullName);
+    Require(method.Body.Instructions.Select(i=>i.ToString()).SequenceEqual(after.Body.Instructions.Select(i=>i.ToString())),"Unrelated Steam task changed: "+method.FullName);
+   }
+  }
+  ResolveEventHandler resolve=(sender,args)=>{string dependency=Path.Combine(managed,new System.Reflection.AssemblyName(args.Name).Name+".dll");return File.Exists(dependency)?System.Reflection.Assembly.Load(File.ReadAllBytes(dependency)):null;};
+  AppDomain.CurrentDomain.AssemblyResolve+=resolve;
+  try{
+   var assembly=System.Reflection.Assembly.Load(File.ReadAllBytes(path));var type=assembly.GetType("Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask",true);
+   var task=Activator.CreateInstance(type,new object[]{null,null});Require(Convert.ToSingle(type.GetProperty("TaskTimeout").GetValue(task,null))==15f,"Real market task timeout must be 15 seconds");
+   var other=assembly.GetType("Systems.Online.Steam.SteamTask`1",true).MakeGenericType(typeof(object));var ordinary=Activator.CreateInstance(other,new object[]{null});Require(Convert.ToSingle(other.GetProperty("TaskTimeout").GetValue(ordinary,null))==90f,"Other Steam task timeout changed");
+  }finally{AppDomain.CurrentDomain.AssemblyResolve-=resolve;}
  }
 
 }

@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Globalization;
 
 public static partial class CflRuntime {
+ public static void CatalogTimeoutPolicy(){Log("Startup market catalog timeout=15s (native default 90s); native failure fallback and Steam authentication preserved");}
+ public static void CatalogRequestStatus(object request){try{int status=Convert.ToInt32(Get(request,"Status"));if(status==3 || status==4)Log("Startup market catalog completion: status="+status+" (3=success, 4=failure); native catalog/fallback handler follows");}catch(Exception e){Log(e);}}
  static readonly object startupLock=new object();
  static readonly Dictionary<string,Stack<long>> startupSteps=new Dictionary<string,Stack<long>>();
  static Stopwatch startupSession;

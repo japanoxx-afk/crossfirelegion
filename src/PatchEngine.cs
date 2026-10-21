@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=27;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+ public const int Revision=29;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -78,6 +78,12 @@ public static class Patcher {
  }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
+  if(name=="Systems.Online.Steam.dll"){
+   var timeout=a.MainModule.Types.Single(t=>t.FullName=="Systems.Online.Steam.SteamTask").Fields.Single(f=>f.Name=="mTaskTimeout");
+   var task=Find(a,"Systems.Online.Steam.Market.Tasks.SteamGetMarketCatalogTask",".ctor");var il=task.Body.GetILProcessor();
+   foreach(var ret in task.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var value=Instruction.Create(OpCodes.Ldc_R4,15f);il.InsertAfter(ret,value);var store=Instruction.Create(OpCodes.Stfld,timeout);il.InsertAfter(value,store);var log=Instruction.Create(OpCodes.Call,Hook(module,"CatalogTimeoutPolicy",0));il.InsertAfter(store,log);il.InsertAfter(log,Instruction.Create(OpCodes.Ret));}
+   var handler=Find(a,"Systems.Online.Steam.Market.SteamMarketService","HandleMarketCatalogRetrieved");var hi=handler.Body.GetILProcessor();var first=handler.Body.Instructions[0];hi.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_1));hi.InsertBefore(first,Instruction.Create(OpCodes.Call,Hook(module,"CatalogRequestStatus",1)));
+  }
   if(name=="Carbon.Simulation.dll"){
    var tech=Find(a,"Carbon.Simulation.Data.AbilityAttributes","get_RequiredTech");var techIl=tech.Body.GetILProcessor();var techHook=Hook(module,"CommanderSkillTech",2);techHook.ReturnType=module.TypeSystem.Object;foreach(var ret in tech.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,techHook);techIl.InsertAfter(ret,call);var cast=Instruction.Create(OpCodes.Castclass,tech.ReturnType);techIl.InsertAfter(call,cast);techIl.InsertAfter(cast,Instruction.Create(OpCodes.Ret));}
    FilterResult(Find(a,"Carbon.Simulation.Data.BoundFXAttribute","get_FXScale"),Hook(module,"CombatTextScale",0));
