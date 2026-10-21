@@ -121,7 +121,7 @@ class RuntimeTests {
   Check(CflRuntime.TooltipFitsAbove(772,1080,300,8) && !CflRuntime.TooltipFitsAbove(773,1080,300,8),"Tooltip boundary gap incorrect");
   CflRuntime.ForgetList(list);var removedSize=list.transform.parent.sizeDelta;CflRuntime.Pack(new Selection(),new Button[64]);Check(list.transform.parent.sizeDelta.y==removedSize.y,"Removed list was updated");
   Console.WriteLine("PASS: blind/critical combat FX quarter size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
-  StartupInstrumentationTests.Run();
+  StartupInstrumentationTests.Run();MovementTests.Run();
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
