@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=31;
+ public const int Revision=32;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -94,6 +94,15 @@ public static class Patcher {
    var handler=Find(a,"Systems.Online.Steam.Market.SteamMarketService","HandleMarketCatalogRetrieved");var hi=handler.Body.GetILProcessor();var first=handler.Body.Instructions[0];hi.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_1));hi.InsertBefore(first,Instruction.Create(OpCodes.Call,Hook(module,"CatalogRequestStatus",1)));
   }
   if(name=="Carbon.Simulation.dll"){
+   ReplayObjectExit(Find(a,"Carbon.Simulation.Replay","BeginWrite"),"ReplayRecordingStarted");
+   ReplayObjectExit(Find(a,"Carbon.Simulation.Replay","EndWrite"),"ReplayRecordingEnded");
+   ReplayObjectExit(Find(a,"Carbon.Simulation.Replay","LoadFromFile"),"ReplayLoaded");
+   var frameWrite=Find(a,"Carbon.Simulation.Replay","WriteCommandsForFrame");var fw=frameWrite.Body.GetILProcessor();var success=frameWrite.Body.Instructions.Last(i=>i.OpCode==OpCodes.Ldc_I4_1);
+   fw.InsertBefore(success,Instruction.Create(OpCodes.Ldarg_0));fw.InsertBefore(success,Instruction.Create(OpCodes.Ldarg_1));fw.InsertBefore(success,Instruction.Create(OpCodes.Call,Find(a,"Carbon.Simulation.Replay","set_LastRecordedFrame")));
+   foreach(string operation in new[]{"BeginWrite","WriteCommandsForFrame","EndWrite"})GuardReplayWrite(Find(a,"Carbon.Simulation.Replay",operation));
+   AddReplayChecksumCheck(a);
+   ReplayObjectExit(Find(a,"Carbon.Simulation.SimController","BeginSimulation"),"ReplaySimulationStarted");
+   ReplayObjectExit(Find(a,"Carbon.Simulation.SimController","EndSimulation"),"ReplaySimulationEnded");
    MovementPatch.Apply(a);
    var tech=Find(a,"Carbon.Simulation.Data.AbilityAttributes","get_RequiredTech");var techIl=tech.Body.GetILProcessor();var techHook=Hook(module,"CommanderSkillTech",2);techHook.ReturnType=module.TypeSystem.Object;foreach(var ret in tech.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,techHook);techIl.InsertAfter(ret,call);var cast=Instruction.Create(OpCodes.Castclass,tech.ReturnType);techIl.InsertAfter(call,cast);techIl.InsertAfter(cast,Instruction.Create(OpCodes.Ret));}
    FilterResult(Find(a,"Carbon.Simulation.Data.BoundFXAttribute","get_FXScale"),Hook(module,"CombatTextScale",0));
@@ -171,12 +180,37 @@ public static class Patcher {
    }
    var callback=Find(a,"Game.Application.Layers.MPAuthFlowState","OnPlayerServiceRequestComplete");var ci=callback.Body.GetILProcessor();var cf=callback.Body.Instructions[0];ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_0));ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_1));ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_2));var resultHook=Hook(module,"StartupAuthResult",1);resultHook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Int32));resultHook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Boolean));ci.InsertBefore(cf,Instruction.Create(OpCodes.Call,resultHook));
    StartupExit(Find(a,"Game.Application.Layers.MainMenuFlowState","OnEnter"),"StartupMenuReady");
+   StartupExit(Find(a,"Game.Application.Layers.MainMenuFlowState","OnEnter"),"ReplayMenuReady");
+   StartupEntry(Find(a,"Game.Application.Layers.MainMenuFlowState","OnTick"),"ReplayMenuTick");
    var enter=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnEnter");var enterIl=enter.Body.GetILProcessor();enterIl.InsertBefore(enter.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(module,"BeginStartupLoad",0)));
    var exit=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnExit");var exitIl=exit.Body.GetILProcessor();
    foreach(var ret in exit.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Call;ret.Operand=Hook(module,"EndStartupLoad",0);exitIl.InsertAfter(ret,Instruction.Create(OpCodes.Ret));}
   }
   a.Write(output);
  }}}
+ static void ReplayObjectExit(MethodDefinition method,string name){var il=method.Body.GetILProcessor();foreach(var ret in method.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,Hook(method.Module,name,1));il.InsertAfter(ret,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}ExpandBranches(method);}
+ static void GuardReplayWrite(MethodDefinition method){
+  var inner=new MethodDefinition("CflNative"+method.Name,MethodAttributes.Private|MethodAttributes.HideBySig,method.ReturnType);foreach(var parameter in method.Parameters)inner.Parameters.Add(new ParameterDefinition(parameter.Name,parameter.Attributes,parameter.ParameterType));method.DeclaringType.Methods.Add(inner);
+  var body=method.Body;inner.Body=new MethodBody(inner){InitLocals=body.InitLocals,MaxStackSize=body.MaxStackSize};foreach(var variable in body.Variables)inner.Body.Variables.Add(variable);foreach(var instruction in body.Instructions){var parameter=instruction.Operand as ParameterDefinition;if(parameter!=null)instruction.Operand=inner.Parameters[parameter.Index];inner.Body.Instructions.Add(instruction);}foreach(var handler in body.ExceptionHandlers)inner.Body.ExceptionHandlers.Add(handler);
+  method.Body=new MethodBody(method){InitLocals=true};var il=method.Body.GetILProcessor();bool returns=method.ReturnType.MetadataType==MetadataType.Boolean;VariableDefinition result=null;if(returns){result=new VariableDefinition(method.Module.TypeSystem.Boolean);method.Body.Variables.Add(result);}
+  var start=Instruction.Create(OpCodes.Nop);var failure=new VariableDefinition(method.Module.ImportReference(typeof(Exception)));method.Body.Variables.Add(failure);var handlerStart=Instruction.Create(OpCodes.Stloc,failure);var end=Instruction.Create(OpCodes.Nop);
+  il.Append(start);if(method.Name=="EndWrite"){il.Append(Instruction.Create(OpCodes.Ldarg_0));il.Append(Instruction.Create(OpCodes.Ldfld,method.DeclaringType.Fields.Single(f=>f.Name=="mActiveStream")));var available=Instruction.Create(OpCodes.Nop);il.Append(Instruction.Create(OpCodes.Brtrue,available));il.Append(Instruction.Create(OpCodes.Leave,end));il.Append(available);}
+  il.Append(Instruction.Create(OpCodes.Ldarg_0));foreach(var p in method.Parameters)il.Append(Instruction.Create(OpCodes.Ldarg,p));il.Append(Instruction.Create(OpCodes.Call,inner));if(returns)il.Append(Instruction.Create(OpCodes.Stloc,result));il.Append(Instruction.Create(OpCodes.Leave,end));
+  il.Append(handlerStart);il.Append(Instruction.Create(OpCodes.Ldarg_0));il.Append(Instruction.Create(OpCodes.Ldloc,failure));il.Append(Instruction.Create(OpCodes.Call,Hook(method.Module,"ReplayRecordingFailed",2)));il.Append(Instruction.Create(OpCodes.Leave,end));il.Append(end);if(returns)il.Append(Instruction.Create(OpCodes.Ldloc,result));il.Append(Instruction.Create(OpCodes.Ret));
+  method.Body.ExceptionHandlers.Add(new ExceptionHandler(ExceptionHandlerType.Catch){TryStart=start,TryEnd=handlerStart,HandlerStart=handlerStart,HandlerEnd=end,CatchType=method.Module.ImportReference(typeof(Exception))});
+ }
+ static void AddReplayChecksumCheck(AssemblyDefinition assembly){
+  var method=Find(assembly,"Carbon.Simulation.SimController","TickSimOnAdvanceReplay");var il=method.Body.GetILProcessor();
+  var first=method.Body.Instructions[0];var blocked=Hook(method.Module,"ReplayIsInvalid",0);blocked.ReturnType=method.Module.TypeSystem.Boolean;il.InsertBefore(first,Instruction.Create(OpCodes.Call,blocked));il.InsertBefore(first,Instruction.Create(OpCodes.Brfalse,first));il.InsertBefore(first,Instruction.Create(OpCodes.Ret));
+  var completed=method.Body.Instructions.Single(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="set_IsPlayOver");var owner=Instruction.Create(OpCodes.Ldarg_0);il.InsertAfter(completed,owner);il.InsertAfter(owner,Instruction.Create(OpCodes.Call,Hook(method.Module,"ReplayFinished",1)));
+  var read=method.Body.Instructions.Single(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="ReadCommandsForNextFrame");
+  if(read.Next.OpCode!=OpCodes.Pop)throw new InvalidOperationException("Unsupported replay checksum path");
+  var checksum=((MethodReference)read.Operand).ReturnType;var expected=new VariableDefinition(checksum);method.Body.Variables.Add(expected);method.Body.InitLocals=true;
+  var discard=read.Next;var continuation=discard.Next;discard.OpCode=OpCodes.Stloc;discard.Operand=expected;
+  var sum=assembly.MainModule.ImportReference(checksum.Resolve().Methods.Single(m=>m.Name=="get_Sum"));var actual=method.DeclaringType.Fields.Single(f=>f.Name=="mSimChecksum");
+  var sequence=new[]{Instruction.Create(OpCodes.Ldloc,expected),Instruction.Create(OpCodes.Brfalse,continuation),Instruction.Create(OpCodes.Ldloc,expected),Instruction.Create(OpCodes.Callvirt,sum),Instruction.Create(OpCodes.Ldarg_0),Instruction.Create(OpCodes.Ldfld,actual),Instruction.Create(OpCodes.Callvirt,sum),Instruction.Create(OpCodes.Beq,continuation),Instruction.Create(OpCodes.Ldarg_0),Instruction.Create(OpCodes.Ldloc,expected),Instruction.Create(OpCodes.Call,Hook(method.Module,"ReplayChecksumMismatch",2)),Instruction.Create(OpCodes.Ret)};
+  foreach(var item in sequence)il.InsertBefore(continuation,item);ExpandBranches(method);
+ }
  public static string IncrementalBootConfig(string original){
   var lines=original.Replace("\r\n","\n").Split('\n').Where(line=>!line.TrimStart().StartsWith("gc-max-time-slice=",StringComparison.Ordinal)).ToList();
   while(lines.Count>0 && lines[lines.Count-1]=="")lines.RemoveAt(lines.Count-1);
