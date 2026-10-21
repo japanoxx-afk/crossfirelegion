@@ -164,6 +164,37 @@ public static partial class CflRuntime {
   Set(layout.Panel,"anchoredPosition",Vector(x,y));
   if(layout.EmptyGrid!=null){object go=Get(layout.EmptyGrid,"gameObject");go.GetType().GetMethod("SetActive",new[]{typeof(bool)}).Invoke(go,new object[]{count<=12});}
  }
+ static ulong SuidBits(object value){return Convert.ToUInt64(Get(value,"mBits"));}
+ static object NewReference(Type type,ulong id){object reference=Activator.CreateInstance(type);var member=Member(type,"ReferenceID");Type suid=member.Property!=null?member.Property.PropertyType:member.Field.FieldType;Set(reference,"ReferenceID",Activator.CreateInstance(suid,new object[]{id}));return reference;}
+ class EnergyConfigured {}
+ static readonly ConditionalWeakTable<object,EnergyConfigured> configuredEnergy=new ConditionalWeakTable<object,EnergyConfigured>();
+ public static void ConfigureLevelEnergy(object reference){try{if(reference==null)return;object collection=Resolve(reference);if(collection!=null)ConfigureCommanderEnergy(collection);}catch(Exception e){Log("Commander energy configuration: "+e);}}
+ static MethodInfo commanderBlueprintElement;
+ public static void ConfigureSpawnEnergy(object attributes,object blueprint){try{
+  if(blueprint==null)return;if(commanderBlueprintElement==null)commanderBlueprintElement=blueprint.GetType().GetMethod("FindElement",Type.EmptyTypes).MakeGenericMethod(TypeByName("Carbon.Simulation.Data.CommanderAttributes"));
+  if(commanderBlueprintElement.Invoke(blueprint,null)!=null)ConfigureCommanderEnergy(attributes);
+ }catch(Exception e){Log("Commander spawn energy configuration: "+e);}}
+ public static void ConfigureCommanderEnergy(object collection){
+  EnergyConfigured configured;if(configuredEnergy.TryGetValue(collection,out configured))return;
+  var list=(IList)Get(collection,"TrickleEntries");int first=-1;object original=null;
+  for(int i=0;i<list.Count;i++){object inventory=Get(list[i],"InventoryType");if(inventory!=null && SuidBits(Get(inventory,"ReferenceID"))==2315574823061558829UL){first=i;original=list[i];break;}}
+  if(original==null)throw new InvalidOperationException("Map commander trickle has no energy inventory");
+  var clone=typeof(object).GetMethod("MemberwiseClone",BindingFlags.Instance|BindingFlags.NonPublic);object basis=clone.Invoke(original,null);Set(basis,"Amount",1);Set(basis,"IntervalLength",Real(15));Set(basis,"TrickleRequirement",null);
+  Type reqType=Member(original.GetType(),"TrickleRequirement").Property.PropertyType;var additions=new List<object>{basis};
+  for(int tier=2;tier<=3;tier++){object bonus=clone.Invoke(basis,null);Set(bonus,"IntervalLength",Real(60));Set(bonus,"TrickleRequirement",NewReference(reqType,0x43464c0000000200UL+10+(ulong)tier));additions.Add(bonus);}
+  for(int i=list.Count-1;i>=0;i--){object inventory=Get(list[i],"InventoryType");if(inventory!=null && SuidBits(Get(inventory,"ReferenceID"))==2315574823061558829UL)list.RemoveAt(i);}
+  list.Insert(first,additions[0]);for(int i=1;i<additions.Count;i++)list.Add(additions[i]);configuredEnergy.Add(collection,new EnergyConfigured());Log("Map commander energy configured: base 4/min, HQ tier2 +1/min, tier3 +1/min");
+ }
+ static readonly Dictionary<ulong,ulong> secondSkillTech=new Dictionary<ulong,ulong>{{2454349427832025779UL,2339290849844763958UL},{2471814347342139724UL,2339290849844763958UL},{2702086817435277841UL,2339290849844763958UL},{2505926479111310885UL,2339967728677767464UL},{2497781646663498144UL,2339967728677767464UL},{2538863309229101160UL,2339967728677767464UL},{2502595789518590345UL,2340439062029106770UL},{2472070902315708373UL,2340439062029106770UL},{2471754486308991889UL,2340439062029106770UL},{5636686988173583607UL,2340439062029106770UL}};
+ class TechGate {public object Source,Result;}
+ static readonly ConditionalWeakTable<object,TechGate> skillGates=new ConditionalWeakTable<object,TechGate>();
+ public static object CommanderSkillTech(object original,object ability){
+  ulong tech;if(!secondSkillTech.TryGetValue(SuidBits(Get(ability,"ID")),out tech))return original;
+  TechGate cached;if(skillGates.TryGetValue(ability,out cached) && Object.ReferenceEquals(cached.Source,original))return cached.Result;
+  var input=(Array)original;Type referenceType=input.GetType().GetElementType();foreach(object item in input)if(SuidBits(Get(item,"ReferenceID"))==tech)return original;
+  Array result=Array.CreateInstance(referenceType,input.Length+1);Array.Copy(input,result,input.Length);result.SetValue(NewReference(referenceType,tech),input.Length);
+  skillGates.Remove(ability);skillGates.Add(ability,new TechGate{Source=original,Result=result});return result;
+ }
  static object timerHud,timerObject,timerLabel;static long timerNext;static long timerSecond=-1;static double timerRate;static PropertyInfo timerFrameProperty;
  public static string MatchTimeText(long seconds){seconds=Math.Max(0,seconds);return seconds>=3600?String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}:{2:00}",seconds/3600,(seconds/60)%60,seconds%60):String.Format(System.Globalization.CultureInfo.InvariantCulture,"{0:00}:{1:00}",seconds/60,seconds%60);}
  public static void BeginMatchTimer(object hud){try{

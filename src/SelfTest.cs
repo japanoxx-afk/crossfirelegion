@@ -40,6 +40,9 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    blocked=false;try{Patcher.Restore(test);}catch{blocked=true;}Require(blocked,"변경 파일 덮어쓰기 차단");
    Require(Patcher.Hash(dll)==patched,"복원 사전 검증의 부분 변경 방지");File.WriteAllBytes(ui,uiBytes);
    using(var a=AssemblyDefinition.ReadAssembly(dll)){
+    var spawnEnergy=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.TrickleInitializer").Methods.Single(m=>m.Name=="Initializer");Require(spawnEnergy.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("ConfigureSpawnEnergy")),"Commander spawn energy hook missing");
+    var levelEnergy=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.LevelAttributes").Methods.Single(m=>m.Name=="get_DefaultCommanderTrickle");Require(levelEnergy.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("ConfigureLevelEnergy")),"Actual map commander energy hook missing");
+    var skillTech=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_RequiredTech");Require(skillTech.Body.Instructions.Any(x=>x.Operand!=null && x.Operand.ToString().Contains("CommanderSkillTech")),"Second commander skill HQ3 requirement hook missing");
     var initial=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTimeInitial");Require(initial.Body.Instructions.Count==3 && initial.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Original initial cooldown getter not restored");
     var regular=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.AbilityAttributes").Methods.Single(m=>m.Name=="get_CooldownTime");Require(regular.Body.Instructions.Count==3 && regular.Body.Instructions[1].OpCode==OpCodes.Ldfld,"Regular cooldown getter changed");
     var fx=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.Data.BoundFXAttribute");
