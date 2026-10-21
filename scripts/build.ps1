@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force $out | Out-Null
 Copy-Item (Join-Path $tools 'cecil/lib/net40/Mono.Cecil.dll') $out -Force
 Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $out -Force
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-& $csc /nologo /target:library /optimize+ "/out:$tools/CflRuntime.dll" (Join-Path $root 'src/Runtime.cs') (Join-Path $root 'src/Cheats.cs')
+& $csc /nologo /target:library /optimize+ "/out:$tools/CflRuntime.dll" (Join-Path $root 'src/Runtime.cs') (Join-Path $root 'src/Cheats.cs') (Join-Path $root 'src/Startup.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Runtime compilation failed' }
 $app = Get-Content (Join-Path $root 'src/Application.cs') -Raw
 $app = $app.Replace('const string CurrentVersion="0.1.0";', "const string CurrentVersion=`"$Version`";").Replace('AssemblyVersion("0.1.0.0")', "AssemblyVersion(`"$Version.0`" )")

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -11,7 +11,7 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=26;
+ public const int Revision=27;
  static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
@@ -49,6 +49,33 @@ public static class Patcher {
    ret.OpCode=OpCodes.Ldarg_0;il.InsertAfter(ret,Instruction.Create(OpCodes.Call,hook));il.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));
   }
  }
+ static MethodReference StartupHook(ModuleDefinition module,string name){var hook=Hook(module,name,0);hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));return hook;}
+ static void ExpandBranches(MethodDefinition method){
+  foreach(var instruction in method.Body.Instructions)if(instruction.OpCode.OperandType==OperandType.ShortInlineBrTarget){string name=instruction.OpCode.Name.Substring(0,instruction.OpCode.Name.Length-2);instruction.OpCode=typeof(OpCodes).GetFields().Where(f=>f.FieldType==typeof(OpCode)).Select(f=>(OpCode)f.GetValue(null)).Single(code=>code.Name==name);}
+ }
+ static void StartupEntry(MethodDefinition method,string hook){var il=method.Body.GetILProcessor();il.InsertBefore(method.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(method.Module,hook,0)));}
+ static void StartupExit(MethodDefinition method,string hook){var il=method.Body.GetILProcessor();foreach(var ret in method.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Call;ret.Operand=Hook(method.Module,hook,0);il.InsertAfter(ret,Instruction.Create(OpCodes.Ret));}ExpandBranches(method);}
+ static void TraceStartupMethod(MethodDefinition method){
+  string label=method.DeclaringType.Name+"."+method.Name;var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];
+  il.InsertBefore(first,Instruction.Create(OpCodes.Ldstr,label));il.InsertBefore(first,Instruction.Create(OpCodes.Call,StartupHook(method.Module,"StartupStepBegin")));
+  foreach(var ret in method.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldstr;ret.Operand=label;var call=Instruction.Create(OpCodes.Call,StartupHook(method.Module,"StartupStepEnd"));il.InsertAfter(ret,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
+  ExpandBranches(method);
+ }
+ static void TraceStartupCalls(MethodDefinition method){
+  var il=method.Body.GetILProcessor();int index=0;
+  foreach(var instruction in method.Body.Instructions.ToArray()){
+   var callee=instruction.Operand as MethodReference;if(callee==null || (instruction.OpCode!=OpCodes.Call && instruction.OpCode!=OpCodes.Callvirt && instruction.OpCode!=OpCodes.Newobj))continue;
+   string type=callee.DeclaringType.FullName;
+   bool request=new[]{"AuthenticateSession","GetMarketCatalog","GetProfileInventory","RefreshPlayerProfile","RetrievePlayerStats","RetrieveMatchHistory"}.Contains(callee.Name);
+   if(!(request || callee.Name=="AddService" || callee.Name=="SetUp" || callee.Name=="BindAndSetUp" || callee.Name=="SetupAutoLoad" || callee.Name=="WarmupAllShaders" || callee.Name=="WarmUp" || callee.Name=="LoadAssetBlocking" || type.Contains("ITelemetryService") || type.Contains("SteamServiceProvider") || callee.Name.StartsWith("Retrieve",StringComparison.Ordinal)))continue;
+   string label=method.DeclaringType.Name+"."+method.Name+"/"+(++index)+":"+callee.FullName;
+   var original=Instruction.Create(instruction.OpCode,callee);instruction.OpCode=OpCodes.Ldstr;instruction.Operand=label;
+   var begin=Instruction.Create(OpCodes.Call,StartupHook(method.Module,"StartupStepBegin"));il.InsertAfter(instruction,begin);il.InsertAfter(begin,original);
+   if(request){var requestName=Instruction.Create(OpCodes.Ldstr,"request:"+callee.Name);il.InsertBefore(original,requestName);il.InsertBefore(original,Instruction.Create(OpCodes.Call,StartupHook(method.Module,"StartupStepBegin")));}
+   var end=Instruction.Create(OpCodes.Ldstr,label);il.InsertAfter(original,end);il.InsertAfter(end,Instruction.Create(OpCodes.Call,StartupHook(method.Module,"StartupStepEnd")));
+  }
+  ExpandBranches(method);
+ }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
   var module=a.MainModule;
   if(name=="Carbon.Simulation.dll"){
@@ -63,6 +90,7 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   TraceStartupMethod(Find(a,"Game.UI.FrontEnd","Carbon.Core.Services.ISetUp.SetUp"));
    var hudSetup=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.SetUp");var hudIl=hudSetup.Body.GetILProcessor();foreach(var ret in hudSetup.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,Hook(module,"BeginMatchTimer",1));hudIl.InsertAfter(ret,call);hudIl.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
    var hudEnd=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.TearDown");var endIl=hudEnd.Body.GetILProcessor();var endFirst=hudEnd.Body.Instructions[0];endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Ldarg_0));endIl.InsertBefore(endFirst,Instruction.Create(OpCodes.Call,Hook(module,"EndMatchTimer",1)));
    var tooltip=Find(a,"Game.UI.UIAnchoredPanel","UpdatePosition");var tipIl=tooltip.Body.GetILProcessor();var tipFirst=tooltip.Body.Instructions[0];tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Ldarg_0));tipIl.InsertBefore(tipFirst,Instruction.Create(OpCodes.Call,Hook(module,"PositionProductionTooltip",1)));
@@ -110,6 +138,20 @@ public static class Patcher {
    foreach(var ret in method.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Dup;var lang=Instruction.Create(OpCodes.Ldarg_1);il.InsertAfter(ret,lang);var call=Instruction.Create(OpCodes.Call,hook);il.InsertAfter(lang,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
   }
   if(name=="Game.Application.dll"){
+
+   foreach(string type in new[]{"Game.Application.MainComponent","Game.Application.Main","Game.Application.Layers.GlobalServiceInitState","Game.Application.Layers.BootflowServicesInitState","Game.Application.Layers.ApplicationAssetBundleLoadingState","Game.Application.Layers.MPAuthFlowState"}){
+    foreach(var method in a.MainModule.Types.Single(t=>t.FullName==type).Methods.Where(m=>m.HasBody && (m.Name=="Awake" || m.Name=="Startup" || m.Name.StartsWith("Setup",StringComparison.Ordinal) || m.Name=="OnEnter" || m.Name=="OnAllLoadsCompleted" || m.Name=="OnAuthenticationStatus" || m.Name=="OnMarketCatalogRetrieved" || m.Name=="OnInventoryRetrieved"))){TraceStartupCalls(method);TraceStartupMethod(method);}
+   }
+   StartupEntry(Find(a,"Game.Application.MainComponent","Awake"),"BeginStartupSession");
+   TraceStartupCalls(Find(a,"Game.Application.Layers.MPAuthFlowState","HandleDeferredLobbyCallbacks"));
+   foreach(string callbackName in new[]{"OnMarketCatalogRetrieved","OnInventoryRetrieved"}){var method=Find(a,"Game.Application.Layers.MPAuthFlowState",callbackName);var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];il.InsertBefore(first,Instruction.Create(OpCodes.Ldstr,"request:"+(callbackName=="OnMarketCatalogRetrieved"?"GetMarketCatalog":"GetProfileInventory")));il.InsertBefore(first,Instruction.Create(OpCodes.Call,StartupHook(module,"StartupStepEnd")));}
+   var statusMethod=Find(a,"Game.Application.Layers.MPAuthFlowState","OnAuthenticationStatus");var statusIl=statusMethod.Body.GetILProcessor();var statusFirst=statusMethod.Body.Instructions[0];statusIl.InsertBefore(statusFirst,Instruction.Create(OpCodes.Ldarg_2));var statusHook=Hook(module,"StartupAuthenticationStatus",0);statusHook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Int32));statusIl.InsertBefore(statusFirst,Instruction.Create(OpCodes.Call,statusHook));
+   foreach(string state in new[]{"BootflowServicesBindState","MPAuthFlowState"}){
+    string label=state+" asynchronous wait";var start=Find(a,"Game.Application.Layers."+state,"OnEnter");var si=start.Body.GetILProcessor();var sf=start.Body.Instructions[0];si.InsertBefore(sf,Instruction.Create(OpCodes.Ldstr,label));si.InsertBefore(sf,Instruction.Create(OpCodes.Call,StartupHook(module,"StartupStepBegin")));
+    var finish=Find(a,"Game.Application.Layers."+state,"OnExit");var fi=finish.Body.GetILProcessor();var ff=finish.Body.Instructions[0];fi.InsertBefore(ff,Instruction.Create(OpCodes.Ldstr,label));fi.InsertBefore(ff,Instruction.Create(OpCodes.Call,StartupHook(module,"StartupStepEnd")));
+   }
+   var callback=Find(a,"Game.Application.Layers.MPAuthFlowState","OnPlayerServiceRequestComplete");var ci=callback.Body.GetILProcessor();var cf=callback.Body.Instructions[0];ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_0));ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_1));ci.InsertBefore(cf,Instruction.Create(OpCodes.Ldarg_2));var resultHook=Hook(module,"StartupAuthResult",1);resultHook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Int32));resultHook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Boolean));ci.InsertBefore(cf,Instruction.Create(OpCodes.Call,resultHook));
+   StartupExit(Find(a,"Game.Application.Layers.MainMenuFlowState","OnEnter"),"StartupMenuReady");
    var enter=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnEnter");var enterIl=enter.Body.GetILProcessor();enterIl.InsertBefore(enter.Body.Instructions[0],Instruction.Create(OpCodes.Call,Hook(module,"BeginStartupLoad",0)));
    var exit=Find(a,"Game.Application.Layers.ApplicationAssetBundleLoadingState","OnExit");var exitIl=exit.Body.GetILProcessor();
    foreach(var ret in exit.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Call;ret.Operand=Hook(module,"EndStartupLoad",0);exitIl.InsertAfter(ret,Instruction.Create(OpCodes.Ret));}

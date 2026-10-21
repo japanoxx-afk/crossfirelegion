@@ -35,6 +35,24 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
     var loader=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.ApplicationAssetBundleLoadingState");
     Require(loader.Methods.Single(m=>m.Name=="OnEnter").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::BeginStartupLoad")),"초기 로딩 최적화 진입 후크");
     Require(loader.Methods.Single(m=>m.Name=="OnExit").Body.Instructions.Any(i=>i.Operand!=null && i.Operand.ToString().Contains("CflRuntime::EndStartupLoad")),"초기 로딩 우선순위 복원 후크");
+    var awake=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.MainComponent").Methods.Single(m=>m.Name=="Awake");
+    Require(awake.Body.Instructions[0].Operand.ToString().Contains("CflRuntime::BeginStartupSession"),"Initial scene loading priority must start before Awake");
+    var startup=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Main").Methods.Single(m=>m.Name=="Startup");
+    Require(startup.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("SetupAutoLoad")),"Attribute database startup timing missing");
+    var services=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.BootflowServicesInitState").Methods.Single(m=>m.Name=="SetupServices");
+    Require(services.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("SteamServiceProvider")),"Steam initialization timing missing");
+    Require(services.Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("ITelemetryService::Init")),"Telemetry initialization timing missing");
+    var auth=app.MainModule.Types.Single(t=>t.FullName=="Game.Application.Layers.MPAuthFlowState");
+    Require(auth.Methods.Single(m=>m.Name=="OnEnter").Body.Instructions.Count(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).Name=="AuthenticateSession")==1,"Native authentication must run exactly once");
+    Require(auth.Methods.Single(m=>m.Name=="HandleDeferredLobbyCallbacks").Body.Instructions.Any(i=>i.OpCode==OpCodes.Ldstr && i.Operand.ToString().Contains("RetrieveMatchHistory")),"Profile/history timings missing");
+    using(var originalApp=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.Application.dll.cfl-original"))){
+     foreach(var type in app.MainModule.Types)foreach(var method in type.Methods.Where(m=>m.HasBody && m.Body.Instructions.Any(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).DeclaringType.Name=="CflRuntime"))){
+      var before=originalApp.MainModule.Types.Single(t=>t.FullName==type.FullName).Methods.Single(m=>m.FullName==method.FullName);
+      var nativeCalls=before.Body.Instructions.Where(i=>i.Operand is MethodReference).Select(i=>i.Operand.ToString());
+      var afterCalls=method.Body.Instructions.Where(i=>i.Operand is MethodReference && ((MethodReference)i.Operand).DeclaringType.Name!="CflRuntime").Select(i=>i.Operand.ToString());
+      Require(nativeCalls.SequenceEqual(afterCalls) && before.Body.ExceptionHandlers.Count==method.Body.ExceptionHandlers.Count,"Startup native calls/exception handlers changed: "+method.FullName);
+     }
+    }
    }
    bool blocked=false;try{Patcher.Apply(test);}catch{blocked=true;}Require(blocked,"중복 적용 차단");
    string patched=Patcher.Hash(dll);string ui=Path.Combine(Path.GetDirectoryName(dll),"Game.UI.dll");byte[] uiBytes=File.ReadAllBytes(ui);File.AppendAllText(ui,"tamper");

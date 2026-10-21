@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 public class Reference<T>{public T Value;public static implicit operator T(Reference<T> r){return r.Value;}}
 public class Item {public long ID;}
@@ -62,6 +62,9 @@ class RuntimeTests {
   Check(CflRuntime.CombatTextAdditionalScale(10,ordinaryFx)==10,"Unrelated FX additional scale changed");
   Check(CflRuntime.CombatTextScale(1,null)==1,"Missing effect descriptor changed");
   UnityEngine.Application.backgroundLoadingPriority=UnityEngine.ThreadPriority.BelowNormal;CflRuntime.BeginStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Startup load priority not raised");CflRuntime.BeginStartupLoad();CflRuntime.EndStartupLoad();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Startup load priority not restored");CflRuntime.EndStartupLoad();
+  var startupOutput=new System.IO.StringWriter();var oldOutput=Console.Out;Console.SetOut(startupOutput);
+  try{CflRuntime.BeginStartupSession();Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.High,"Initial scene priority missing");CflRuntime.BeginStartupSession();CflRuntime.StartupStepBegin("nested");CflRuntime.StartupStepBegin("nested");CflRuntime.StartupStepEnd("nested");CflRuntime.StartupStepEnd("nested");CflRuntime.StartupStepEnd("unknown");CflRuntime.StartupStepBegin("request:RefreshPlayerProfile");var authState=new StartupAuthState();CflRuntime.StartupAuthResult(authState,99,true);CflRuntime.StartupAuthResult(authState,7,false);CflRuntime.StartupStepBegin("request:RetrievePlayerStats");var callbackThread=new System.Threading.Thread(()=>CflRuntime.StartupStepEnd("request:RetrievePlayerStats"));callbackThread.Start();callbackThread.Join();CflRuntime.StartupMenuReady();CflRuntime.StartupStepBegin("after-menu");CflRuntime.StartupStepEnd("after-menu");}finally{Console.SetOut(oldOutput);}
+  Check(UnityEngine.Application.backgroundLoadingPriority==UnityEngine.ThreadPriority.BelowNormal,"Menu fallback must restore loading priority");string startupLog=startupOutput.ToString();Check(startupLog.Split(new[]{"Startup end: nested"},StringSplitOptions.None).Length==3 && startupLog.Contains("main-menu flow ready") && !startupLog.Contains("after-menu") && !startupLog.Contains("unfinished scope") && startupLog.Contains("success=False") && !startupLog.Contains("success=True") && startupLog.Contains("Startup end: request:RetrievePlayerStats"),"Startup nested/request timing or completion suppression failed");
   Check(CflRuntime.AfterRefreshChanged(true,new object()),"Unregistered UI must return native changed flag without inspecting it");
   Check(!CflRuntime.AfterRefreshChanged(false,new object()),"Unchanged UI flag changed");
   var korean=new Dictionary<ulong,string>{{23665,"기존 번역"}};CflRuntime.FillKorean(korean,"ko");Check(korean[23707]=="범블비" && korean[23708].Contains("비행선"),"Missing Bumblebee translation");Check(korean[23665]=="기존 번역" && korean[23736].Contains("{0}"),"Existing translation or format placeholder changed");int translatedCount=korean.Count;CflRuntime.FillKorean(korean,"ko");Check(korean.Count==translatedCount,"Localization repeats grew table");var english=new Dictionary<ulong,string>();CflRuntime.FillKorean(english,"en");Check(english.Count==0,"English language changed");
@@ -118,6 +121,7 @@ class RuntimeTests {
   Check(CflRuntime.TooltipFitsAbove(772,1080,300,8) && !CflRuntime.TooltipFitsAbove(773,1080,300,8),"Tooltip boundary gap incorrect");
   CflRuntime.ForgetList(list);var removedSize=list.transform.parent.sizeDelta;CflRuntime.Pack(new Selection(),new Button[64]);Check(list.transform.parent.sizeDelta.y==removedSize.y,"Removed list was updated");
   Console.WriteLine("PASS: blind/critical combat FX quarter size without entity enlargement or cumulative scaling; full roster, native C/Z and blank slots, 13/17/24/32/33/46/64 buttons bottom anchored, 36-unit gap above bottom three rows, no global image scans, viewport scale at 1080 and 720, small selection restores original position, global skills in original vertical minimap slot, powerups clear global skills, nested UI excluded.");
+  StartupInstrumentationTests.Run();
   if(args.Length>0){int code=SelfTest.Run(args[0]);Console.WriteLine(System.IO.File.ReadAllText(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt")));return code;}
   return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
@@ -130,3 +134,5 @@ public class MapEnergyRef {public MapEnergyId ReferenceID{get;set;}}
 public class MapEnergyEntry {public MapEnergyRef InventoryType{get;set;}public MapEnergyRef TrickleRequirement{get;set;}public int Amount{get;set;}public Carbon.Core.Numerics.Q64.Real IntervalLength{get;set;}}
 public class MapEnergyCollection {public List<MapEnergyEntry> TrickleEntries{get;set;}public MapEnergyCollection(){TrickleEntries=new List<MapEnergyEntry>();}}
 public class MapSkill {public MapEnergyId ID;}
+
+public class StartupAuthState {public int mPlayerServiceRequestId=7;public bool mPendingProfileRefresh=true,mPendingStatsRefresh=false,mPendingMatchHistoryRefresh=false;}
