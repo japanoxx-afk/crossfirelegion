@@ -28,6 +28,7 @@ public static class ReplayLibrary {
    }
    string state=ReplayProtocol.Value(entry.Metadata,"State");if(state=="closed")entry.State="기록 종료 · 전체 재생 미검증";
    if(ReplayProtocol.Value(entry.Metadata,"PlaybackState")=="checksum_eof")entry.State+=" · 재생 EOF/체크섬 통과 이력";
+   if(ReplayProtocol.Value(entry.Metadata,"PlaybackState")=="checksum_eof_unconfirmed")entry.State+=" · 파일 끝까지 검증됨 (경기 전체 여부 미확인)";
    else if(state=="recording" || state=="finalizing")entry.State=RecorderAlive(entry.Metadata)?"녹화 중 / 마무리 중":"미완성 기록 · 정상 종료 확인 안 됨";
    else if(state=="failed"){entry.State="녹화 실패";entry.Error=ReplayProtocol.Value(entry.Metadata,"Error");}
   }catch(Exception e){entry.State="읽기 실패";entry.Error=e.Message;}
@@ -35,16 +36,16 @@ public static class ReplayLibrary {
  }
  static bool RecorderAlive(Dictionary<string,string> data){try{int id;long start;if(!Int32.TryParse(ReplayProtocol.Value(data,"ProcessId"),out id)||!Int64.TryParse(ReplayProtocol.Value(data,"ProcessStartUtc"),out start))return false;using(var p=Process.GetProcessById(id))return !p.HasExited&&p.StartTime.ToUniversalTime().Ticks==start;}catch{return false;}}
  public static ReplayEntry[] List(){var files=new List<string>();if(Directory.Exists(ReplayProtocol.NativeFolder))files.AddRange(Directory.GetFiles(ReplayProtocol.NativeFolder,"*.rply"));string imported=Path.Combine(ReplayProtocol.Home,"imports");if(Directory.Exists(imported))files.AddRange(Directory.GetFiles(imported,"*.rply",SearchOption.AllDirectories));return files.OrderByDescending(File.GetLastWriteTimeUtc).Select(Inspect).ToArray();}
- public static string Request(string game,ReplayEntry entry,bool allowLegacy){
+ public static string Request(string game,ReplayEntry entry){
   if(entry.Error!=null)throw new InvalidDataException(entry.Error);
   if(new FileInfo(entry.File).Length>64L*1024*1024)throw new InvalidDataException("현재 재생 검증 범위는 파일당 64MB까지입니다.");
   if(RecorderAlive(entry.Metadata))throw new IOException("녹화가 끝난 뒤 재생하세요.");
   if(Process.GetProcessesByName("Crossfire_Legion").Length!=0)throw new InvalidOperationException("게임을 정상 종료한 후 리플레이를 실행하세요.");
   SteamLaunch.Prepare(game);string fingerprint=ReplayProtocol.Fingerprint(game);string recorded=ReplayProtocol.Value(entry.Metadata,"Fingerprint");
   if(recorded!="" && recorded!=fingerprint)throw new InvalidDataException("기록 당시 게임·패치와 현재 버전이 다릅니다. 동일 버전에서 재생하세요.");
-  if((recorded=="" || ReplayProtocol.Value(entry.Metadata,"State")!="closed") && !allowLegacy)throw new InvalidDataException("패치 버전 또는 정상 종료 정보가 없습니다. 호환성 미확인 재생을 명시적으로 선택하세요.");
+  string build=ReplayProtocol.GameBuild(game);if(build!=""&&entry.Build!=build)throw new InvalidDataException("이 기록의 게임 빌드("+entry.Build+")가 선택한 게임("+build+")과 다릅니다. 같은 게임 버전에서 재생하세요.");
   string hash=ReplayProtocol.Digest(entry.File),stored=ReplayProtocol.Value(entry.Metadata,"FileHash");if(stored!="" && stored!=hash)throw new InvalidDataException("기록 파일 체크섬이 다릅니다.");
-  string request=Path.Combine(ReplayProtocol.Home,"play-request.ini");ReplayProtocol.Write(request,new Dictionary<string,string>{{"Game",Path.GetFullPath(game)},{"File",entry.File},{"FileHash",hash},{"Fingerprint",fingerprint},{"ExpiresUtc",DateTime.UtcNow.AddMinutes(5).Ticks.ToString()}});return request;
+  string request=Path.Combine(ReplayProtocol.Home,"play-request.ini");ReplayProtocol.Write(request,new Dictionary<string,string>{{"Game",Path.GetFullPath(game)},{"File",entry.File},{"FileHash",hash},{"Fingerprint",fingerprint},{"Launcher",typeof(ReplayLibrary).Assembly.Location},{"ExpiresUtc",DateTime.UtcNow.AddMinutes(5).Ticks.ToString()}});return request;
  }
  public static string Import(string file){
   string destination=Path.Combine(ReplayProtocol.Home,"imports",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(destination);string target=Path.Combine(destination,"replay.rply");

@@ -11,6 +11,7 @@ public static class MovementTests {
    unit.GetField("Friendly").SetValue(first,(friends&1)!=0);unit.GetField("Friendly").SetValue(second,(friends&2)!=0);unit.GetField("X").SetValue(first,(moving&1)!=0?-3:0);unit.GetField("Y").SetValue(second,(moving&2)!=0?4:0);
    collision.GetField("ActiveCollisionLayer").SetValue(a,Enum.ToObject(layer,firstLayer));collision.GetField("ActiveCollisionLayer").SetValue(b,Enum.ToObject(layer,secondLayer));
    bool native=friends==3 && moving!=0;bool expected=native && !(firstLayer==1 && secondLayer==1 && moving==3);bool actual=(bool)helper.Invoke(null,new[]{first,second,a,b});if(actual!=expected)throw new Exception("Movement collision mismatch: friends="+friends+" moving="+moving+" layers="+firstLayer+","+secondLayer);cases++;
+   var legacy=fixture.GetType("Carbon.Simulation.YieldHelpers").GetField("CflReplayOriginalMovement");legacy.SetValue(null,true);if((bool)helper.Invoke(null,new[]{first,second,a,b})!=native)throw new Exception("Legacy replay movement differs from native rules");legacy.SetValue(null,false);
   }
   Console.WriteLine("PASS: emitted native movement helper executes "+cases+" cases; moving friendly ground pairs collide; air, enemies, mixed layers and stationary pass-through preserve native behavior.");
  }

@@ -7,3 +7,7 @@ $csc=Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 if($LASTEXITCODE -ne 0){throw 'Replay tests compilation failed'}
 & "$out/ReplayTests.exe"
 if($LASTEXITCODE -ne 0){throw 'Replay tests failed'}
+& $csc /nologo /target:exe "/out:$out/ReplayPresentationTests.exe" (Join-Path $root 'tests/ReplayPresentationTests.cs')
+if($LASTEXITCODE -ne 0){throw 'Replay presentation tests compilation failed'}
+& "$out/ReplayPresentationTests.exe" (Join-Path $root '.tools/CflRuntime.dll')
+if($LASTEXITCODE -ne 0){throw 'Replay presentation tests failed'}

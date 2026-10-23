@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=32;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+ public const int Revision=35;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Game.Presentation.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -103,6 +103,7 @@ public static class Patcher {
    AddReplayChecksumCheck(a);
    ReplayObjectExit(Find(a,"Carbon.Simulation.SimController","BeginSimulation"),"ReplaySimulationStarted");
    ReplayObjectExit(Find(a,"Carbon.Simulation.SimController","EndSimulation"),"ReplaySimulationEnded");
+   var error=Find(a,"Carbon.Simulation.SimController","OnSimException");var ei=error.Body.GetILProcessor();var ef=error.Body.Instructions[0];ei.InsertBefore(ef,Instruction.Create(OpCodes.Ldarg_1));ei.InsertBefore(ef,Instruction.Create(OpCodes.Call,Hook(module,"ReplayException",1)));
    MovementPatch.Apply(a);
    var tech=Find(a,"Carbon.Simulation.Data.AbilityAttributes","get_RequiredTech");var techIl=tech.Body.GetILProcessor();var techHook=Hook(module,"CommanderSkillTech",2);techHook.ReturnType=module.TypeSystem.Object;foreach(var ret in tech.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,techHook);techIl.InsertAfter(ret,call);var cast=Instruction.Create(OpCodes.Castclass,tech.ReturnType);techIl.InsertAfter(call,cast);techIl.InsertAfter(cast,Instruction.Create(OpCodes.Ret));}
    FilterResult(Find(a,"Carbon.Simulation.Data.BoundFXAttribute","get_FXScale"),Hook(module,"CombatTextScale",0));
@@ -115,6 +116,8 @@ public static class Patcher {
    var positional=check.Body.Instructions.Single(i=>i.Operand!=null && i.Operand.ToString().Contains("RosterRequirement::get_CheckRosterIndex"));
    positional.OpCode=OpCodes.Pop;positional.Operand=null;check.Body.GetILProcessor().InsertAfter(positional,Instruction.Create(OpCodes.Ldc_I4_0));
   }else if(name=="Game.UI.dll"){
+   ReplayObjectExit(Find(a,"Game.UI.UIReplayData","OnUpdate"),"ReplayControlsUpdated");
+   var decorator=Find(a,"Game.UI.UIEntityComponentDataSource","GetEntityDecoratorIsVisible");var di=decorator.Body.GetILProcessor();var df=decorator.Body.Instructions[0];var dh=Hook(module,"ReplayHideVisuals",0);dh.ReturnType=module.TypeSystem.Boolean;di.InsertBefore(df,Instruction.Create(OpCodes.Call,dh));di.InsertBefore(df,Instruction.Create(OpCodes.Brfalse,df));di.InsertBefore(df,Instruction.Create(OpCodes.Ldc_I4_0));di.InsertBefore(df,Instruction.Create(OpCodes.Ret));ExpandBranches(decorator);
    FilterResult(Find(a,"Game.UI.SceneLoader","LoadScenes"),Hook(module,"LoadStartupScenesOnce",0));TraceStartupCalls(Find(a,"Game.UI.OrcaUI","SetupFE"));TraceStartupMethod(Find(a,"Game.UI.OrcaUI","SetupFE"));
    TraceStartupMethod(Find(a,"Game.UI.FrontEnd","Carbon.Core.Services.ISetUp.SetUp"));
    var hudSetup=Find(a,"Game.UI.HUD","Carbon.Core.Services.ISetUp.SetUp");var hudIl=hudSetup.Body.GetILProcessor();foreach(var ret in hudSetup.Body.Instructions.Where(x=>x.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var call=Instruction.Create(OpCodes.Call,Hook(module,"BeginMatchTimer",1));hudIl.InsertAfter(ret,call);hudIl.InsertAfter(call,Instruction.Create(OpCodes.Ret));}
@@ -152,12 +155,26 @@ public static class Patcher {
    foreach(var ret in refresh.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_0;var changed=Hook(module,"AfterRefreshChanged",0);changed.ReturnType=module.TypeSystem.Boolean;changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Boolean));changed.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));refreshIl.InsertAfter(ret,Instruction.Create(OpCodes.Call,changed));refreshIl.InsertAfter(ret.Next,Instruction.Create(OpCodes.Ret));}
   }
   if(name=="Carbon.Presentation.Unity.dll"){
+   ReplayObjectExit(Find(a,"Carbon.Presentation.Unity.InputService","Tick"),"ReplayInputTick");
    var spawner=module.Types.Single(t=>t.FullName=="Carbon.Presentation.Unity.CarbonFXSpawner");
+   foreach(var method in spawner.Methods.Where(m=>m.Name=="SpawnAndHostFXPrefab"&&m.HasBody)){
+    var il=method.Body.GetILProcessor();foreach(var load in method.Body.Instructions.Where(i=>i.Operand is MethodReference&&((MethodReference)i.Operand).Name=="LoadFXElementForDescriptor").ToArray()){
+     var dup=Instruction.Create(OpCodes.Dup);il.InsertAfter(load,dup);var binding=Instruction.Create(OpCodes.Ldarg,method.Parameters.Single(p=>p.Name=="binding"));il.InsertAfter(dup,binding);il.InsertAfter(binding,Instruction.Create(OpCodes.Call,Hook(module,"ReplayCombatVisual",2)));
+    }
+    ExpandBranches(method);
+   }
    foreach(var method in spawner.Methods.Where(m=>m.Name=="SpawnAndHostFXPrefab")){
     var scale=method.Parameters.Single(p=>p.Name=="extraScale");var binding=method.Parameters.Single(p=>p.Name=="binding");
     var hook=Hook(module,"CombatTextAdditionalScale",0);hook.ReturnType=module.TypeSystem.Single;hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Single));hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.Object));
     var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,scale));il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg,binding));il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));il.InsertBefore(first,Instruction.Create(OpCodes.Starg,scale));
    }
+  }
+  if(name=="Game.Presentation.dll"){
+   foreach(string eventName in new[]{"OnSelectionChangedEvent","OnAbilityCommandScheduledEvent","OnAbilityFailureEvent","OnControlGroupUpdateEvent","OnConstructionStartedEvent","OnConstructionFinishedEvent","OnEntityProducedEvent","OnTechProgressEvent"}){
+    var method=Find(a,"Game.Presentation.OrcaSpeechEventProcessor",eventName);var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];var hook=Hook(module,"ReplayMuteAcknowledgement",0);hook.ReturnType=module.TypeSystem.Boolean;
+    il.InsertBefore(first,Instruction.Create(OpCodes.Call,hook));il.InsertBefore(first,Instruction.Create(OpCodes.Brfalse,first));il.InsertBefore(first,Instruction.Create(OpCodes.Ret));ExpandBranches(method);
+   }
+   ReplayObjectExit(Find(a,"Game.Presentation.SelectionFXAssetProcessor","UpdateSelectionStateView"),"ReplaySelectionVisual");
   }
   if(name=="Carbon.Localization.Core.dll"){
    var method=Find(a,"Carbon.Localization.Core.SingleLanguageCacheLocalizationDatabase","GetLanguage");var il=method.Body.GetILProcessor();var hook=Hook(module,"FillKorean",1);hook.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));

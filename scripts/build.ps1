@@ -13,13 +13,13 @@ New-Item -ItemType Directory -Force $out | Out-Null
 Copy-Item (Join-Path $tools 'cecil/lib/net40/Mono.Cecil.dll') $out -Force
 Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.txt') $out -Force
 $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-$ruleSources='Runtime.cs','Cheats.cs','Startup.cs','ReplayRuntime.cs','ReplayProtocol.cs','PatchEngine.cs','MovementPatch.cs','EnergyPatch.cs','CommanderEnergy.lua'
+$ruleSources='Runtime.cs','Cheats.cs','Startup.cs','ReplayRuntime.cs','ReplayPresentation.cs','ReplayProtocol.cs','PatchEngine.cs','MovementPatch.cs','EnergyPatch.cs','CommanderEnergy.lua'
 $canonical=($ruleSources | ForEach-Object {$_+"`n"+[IO.File]::ReadAllText((Join-Path $root "src/$_")).Replace("`r`n","`n").TrimStart([char]0xfeff)}) -join "`n"
 $sha=[Security.Cryptography.SHA256]::Create()
 try{$rulesHash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical))).Replace('-','').ToLowerInvariant()}finally{$sha.Dispose()}
 $protocol=Join-Path $tools 'ReplayProtocol.cs'
 [IO.File]::WriteAllText($protocol,[IO.File]::ReadAllText((Join-Path $root 'src/ReplayProtocol.cs')).Replace('RulesHash="development"',('RulesHash="'+$rulesHash+'"')).Replace('ModVersion="development"',('ModVersion="'+$Version+'"')),[Text.UTF8Encoding]::new($false))
-& $csc /nologo /target:library /optimize+ "/out:$tools/CflRuntime.dll" (Join-Path $root 'src/Runtime.cs') (Join-Path $root 'src/Cheats.cs') (Join-Path $root 'src/Startup.cs') (Join-Path $root 'src/ReplayRuntime.cs') $protocol
+& $csc /nologo /target:library /optimize+ "/out:$tools/CflRuntime.dll" (Join-Path $root 'src/Runtime.cs') (Join-Path $root 'src/Cheats.cs') (Join-Path $root 'src/Startup.cs') (Join-Path $root 'src/ReplayRuntime.cs') (Join-Path $root 'src/ReplayPresentation.cs') $protocol
 if ($LASTEXITCODE -ne 0) { throw 'Runtime compilation failed' }
 $app = Get-Content (Join-Path $root 'src/Application.cs') -Raw
 $app = $app.Replace('const string CurrentVersion="0.1.0";', "const string CurrentVersion=`"$Version`";").Replace('AssemblyVersion("0.1.0.0")', "AssemblyVersion(`"$Version.0`" )")
