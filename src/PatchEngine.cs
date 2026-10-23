@@ -11,8 +11,8 @@ public class PatchFile {public string Name;public string OriginalHash;public str
 public class PatchSet {public int Revision;public List<PatchFile> Files=new List<PatchFile>();}
 public static class Patcher {
  public const string RelativeDll="Crossfire_Legion_Data\\Managed\\Carbon.Simulation.dll";
- public const int Revision=35;
- static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Game.Presentation.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+ public const int Revision=36;
+ static readonly string[] Assemblies={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Game.Presentation.dll","Carbon.Presentation.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
  static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
  public static string Hash(string path){using(var s=File.OpenRead(path))using(var h=SHA256.Create())return BitConverter.ToString(h.ComputeHash(s)).Replace("-","").ToLowerInvariant();}
  static string Managed(string game){return Path.GetDirectoryName(Path.Combine(game,RelativeDll));}
@@ -77,7 +77,7 @@ public static class Patcher {
   ExpandBranches(method);
  }
  static void Rewrite(string name,string source,string output){using(var resolver=new DefaultAssemblyResolver()){resolver.AddSearchDirectory(Path.GetDirectoryName(source));using(var a=AssemblyDefinition.ReadAssembly(source,new ReaderParameters{AssemblyResolver=resolver})){
-  var module=a.MainModule;
+  var module=a.MainModule;TurretPatch.Apply(a);
   if(name=="Carbon.Core.dll"){
    foreach(string methodName in new[]{"InitSetUp","InitPostSetUp"}){var method=Find(a,"Carbon.Core.Services.ServiceContext",methodName);var il=method.Body.GetILProcessor();var first=method.Body.Instructions[0];var begin=Hook(module,"StartupServiceBegin",1);begin.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));var end=Hook(module,"StartupServiceEnd",1);end.Parameters.Add(new ParameterDefinition(module.TypeSystem.String));il.InsertBefore(first,Instruction.Create(OpCodes.Ldarg_1));il.InsertBefore(first,Instruction.Create(OpCodes.Ldstr,methodName));il.InsertBefore(first,Instruction.Create(OpCodes.Call,begin));foreach(var ret in method.Body.Instructions.Where(i=>i.OpCode==OpCodes.Ret).ToArray()){ret.OpCode=OpCodes.Ldarg_1;var phase=Instruction.Create(OpCodes.Ldstr,methodName);il.InsertAfter(ret,phase);var call=Instruction.Create(OpCodes.Call,end);il.InsertAfter(phase,call);il.InsertAfter(call,Instruction.Create(OpCodes.Ret));}ExpandBranches(method);}
   }

@@ -17,6 +17,9 @@ public static class EnergyPatch {
  public static void Rewrite(string source,string output){
   File.Copy(source,output,true);
   using(var zip=ZipFile.Open(output,ZipArchiveMode.Update)){
+   foreach(string file in zip.Entries.Where(e=>e.FullName.StartsWith("Attributes/ConstructionAttributes/",StringComparison.Ordinal)).Select(e=>e.FullName).ToArray()){
+    var construction=Read(zip,file);if(TurretRules.IsTurret(Path.GetFileNameWithoutExtension(file))){Dict(construction["DeployerBlueprint"])["ReferenceID"]=0L;Write(zip,file,construction);}
+   }
    // Script owns passive energy in Classic; keep the old trickle disabled to avoid double credits.
    const string path="Attributes/TrickleAttributesCollection/trickle_commander_default.txt";
    var collection=Read(zip,path);var entries=((IEnumerable)collection["TrickleEntries"]).Cast<object>().ToList();

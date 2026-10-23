@@ -11,7 +11,7 @@ public static class SelfTest {
    if(game==null)throw new Exception("게임 경로가 필요합니다.");
    string source=Path.Combine(game,Patcher.RelativeDll),dll=Path.Combine(test,Patcher.RelativeDll);
    Directory.CreateDirectory(Path.GetDirectoryName(dll));
-   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Game.Presentation.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
+   string[] names={"Carbon.Simulation.dll","Game.UI.dll","Carbon.UI.Unity.dll","Game.Application.dll","Carbon.Presentation.Unity.dll","Game.Presentation.dll","Carbon.Presentation.dll","Carbon.Localization.Core.dll","Systems.Online.Steam.dll","Carbon.Core.dll","..\\boot.config","..\\..\\Data\\Attributes.zip","..\\..\\Data\\Scripts\\Source\\Multiplayer\\Classic\\init.lua"};
    var originals=new System.Collections.Generic.Dictionary<string,string>();
    foreach(string name in names){string from=Path.Combine(Path.GetDirectoryName(source),name);if(File.Exists(from+".cfl-original"))from+=".cfl-original";string to=Path.Combine(Path.GetDirectoryName(dll),name);Directory.CreateDirectory(Path.GetDirectoryName(to));File.Copy(from,to);originals[name]=Patcher.Hash(to);}
    foreach(string dependency in Directory.GetFiles(Path.GetDirectoryName(source),"*.dll")){string target=Path.Combine(Path.GetDirectoryName(dll),Path.GetFileName(dependency));if(!File.Exists(target) && Path.GetFileName(dependency)!="CflRuntime.dll")File.Copy(dependency,target);}
@@ -29,6 +29,7 @@ public static class SelfTest {
    Require(!Patcher.NeedsUpgrade(test),"최신 패치 자동 갱신 반복 방지");
    VerifyCatalogTimeout(Path.GetDirectoryName(dll));
    VerifyMovement(dll);
+   VerifyTurrets(Path.GetDirectoryName(dll));
    using(var pres=AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(dll),"Game.Presentation.dll"))){
     var speech=pres.MainModule.Types.Single(t=>t.FullName=="Game.Presentation.OrcaSpeechEventProcessor");
     foreach(string name in new[]{"OnSelectionChangedEvent","OnAbilityCommandScheduledEvent","OnAbilityFailureEvent","OnControlGroupUpdateEvent","OnConstructionStartedEvent","OnConstructionFinishedEvent","OnEntityProducedEvent","OnTechProgressEvent"})Require(speech.Methods.Single(m=>m.Name==name).Body.Instructions[0].Operand.ToString().Contains("ReplayMuteAcknowledgement"),"Replay-only acknowledgement guard: "+name);
@@ -127,9 +128,26 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
    File.Replace(dll+".legacy",dll,null);
    File.WriteAllText(dll+".cfl-patch.json",new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(new PatchRecord{OriginalHash=original,PatchedHash=Patcher.Hash(dll)}));
    Patcher.Apply(test);Patcher.Restore(test);Require(Patcher.Hash(dll)==original,"이전 패치 업그레이드 및 원본 복원");
-   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, nine-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
+   File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),"PASS: full-roster hook, positional requirement fix, 64 HUD slots, hotkey bound fix, duplicate rejection, tamper preflight, commander 0 energy and three-faction HQ rates 4/5/6, original initial cooldowns, turret construction hooks and scoped data changes, ten-DLL, boot.config, Attributes.zip and Classic script byte-identical restore, legacy migration.");
    Directory.Delete(test,true);return 0;
   }catch(Exception e){File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"test-result.txt"),e.ToString());return 1;}
+ }
+ static void VerifyTurrets(string managed){
+  using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(managed,"Carbon.Simulation.dll"))){
+   var construction=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Simulation.UnderConstructionProcessor");
+   foreach(string method in new[]{"TryStartConstruction","CompleteBuilding","CancelConstruction"})Require(construction.Methods.Single(m=>m.Name==method).Body.Instructions.Any(i=>i.Operand is MethodReference&&((MethodReference)i.Operand).Name.StartsWith("TurretConstruction")),"Turret lifecycle hook missing: "+method);
+   var start=construction.Methods.Single(m=>m.Name=="TryStartConstruction").Body.Instructions;
+   Require(start.ToList().FindIndex(i=>i.Operand is MethodReference&&((MethodReference)i.Operand).Name=="TurretConstructionBegin")>start.ToList().FindIndex(i=>i.Operand is MethodReference&&((MethodReference)i.Operand).Name=="StartConstruction"),"Builder must be reserved only after native construction starts");
+  }
+  using(var a=AssemblyDefinition.ReadAssembly(Path.Combine(managed,"Carbon.Presentation.dll"))){var fog=a.MainModule.Types.Single(t=>t.FullName=="Carbon.Presentation.FogOfWarViewProcessor");foreach(string method in new[]{"Process","TearDown","UpdateEntityVisibility"})Require(fog.Methods.Single(m=>m.Name==method).Body.Instructions.Any(i=>i.Operand is MethodReference&&((MethodReference)i.Operand).Name.StartsWith("TurretView")),"Turret visibility hook missing: "+method);}
+  string data=Path.GetFullPath(Path.Combine(managed,"..","..","Data","Attributes.zip"));int count=0;
+  using(var before=System.IO.Compression.ZipFile.OpenRead(data+".cfl-original"))using(var after=System.IO.Compression.ZipFile.OpenRead(data))foreach(var entry in before.Entries.Where(e=>e.FullName.StartsWith("Attributes/ConstructionAttributes/"))){
+   var original=EnergyPatch.Read(before,entry.FullName);var updated=EnergyPatch.Read(after,entry.FullName);
+   if(TurretRules.IsTurret(Path.GetFileNameWithoutExtension(entry.FullName))){count++;Require(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)updated["DeployerBlueprint"])["ReferenceID"])==0,"Turret summon deployer was not removed");original["DeployerBlueprint"]=updated["DeployerBlueprint"];}
+   var json=new System.Web.Script.Serialization.JavaScriptSerializer();Require(json.Serialize(original)==json.Serialize(updated),"Other construction data changed: "+entry.FullName);
+  }
+  Require(count==9,"Expected nine worker turret construction variants");
+  using(var stream=typeof(Patcher).Assembly.GetManifestResourceStream("CHANGELOG.md"))using(var reader=new StreamReader(stream))Require(reader.ReadToEnd().Contains("2026-10-24 | v0.2.36"),"Dated changelog resource missing");
  }
  static void VerifyCommanderEnergy(string file){
   using(var zip=System.IO.Compression.ZipFile.OpenRead(file)){
