@@ -143,11 +143,13 @@ var prior=serializer.Deserialize<PatchSet>(stateText);prior.Revision=6;File.Writ
   string data=Path.GetFullPath(Path.Combine(managed,"..","..","Data","Attributes.zip"));int count=0;
   using(var before=System.IO.Compression.ZipFile.OpenRead(data+".cfl-original"))using(var after=System.IO.Compression.ZipFile.OpenRead(data))foreach(var entry in before.Entries.Where(e=>e.FullName.StartsWith("Attributes/ConstructionAttributes/"))){
    var original=EnergyPatch.Read(before,entry.FullName);var updated=EnergyPatch.Read(after,entry.FullName);
-   if(TurretRules.IsTurret(Path.GetFileNameWithoutExtension(entry.FullName))){count++;Require(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)updated["DeployerBlueprint"])["ReferenceID"])==0,"Turret summon deployer was not removed");original["DeployerBlueprint"]=updated["DeployerBlueprint"];}
+   if(TurretRules.IsTurret(Path.GetFileNameWithoutExtension(entry.FullName))){count++;Require(Convert.ToInt64(((System.Collections.Generic.Dictionary<string,object>)updated["DeployerBlueprint"])["ReferenceID"])==0,"Turret summon deployer was not removed");Require(!(bool)updated["NeedsPower"]&&!(bool)updated["IsBuildOnlyExpansion"],"Turret construction area restriction remains");Require(TurretRules.IsTurretID(Convert.ToUInt64(updated["ID"])),"Runtime turret ID differs from data patch");original["DeployerBlueprint"]=updated["DeployerBlueprint"];original["NeedsPower"]=false;original["IsBuildOnlyExpansion"]=false;}
    var json=new System.Web.Script.Serialization.JavaScriptSerializer();Require(json.Serialize(original)==json.Serialize(updated),"Other construction data changed: "+entry.FullName);
   }
   Require(count==9,"Expected nine worker turret construction variants");
-  using(var stream=typeof(Patcher).Assembly.GetManifestResourceStream("CHANGELOG.md"))using(var reader=new StreamReader(stream))Require(reader.ReadToEnd().Contains("2026-10-24 | v0.2.36"),"Dated changelog resource missing");
+  Require(TurretRules.IsTurretID(2508879575704982897UL)&&TurretRules.IsTurretID(7590277213110165800UL)&&TurretRules.IsTurretID(8116859003494801254UL),"Blacklist Watch Tower missing");
+  Require(!TurretRules.IsTurretID(3387099795626728491UL)&&!TurretRules.IsTurretID(4997578833994876647UL)&&!TurretRules.IsTurretID(8661039658331137650UL),"Blacklist Workshop/Supply Cache must retain ordinary construction");
+  using(var stream=typeof(Patcher).Assembly.GetManifestResourceStream("CHANGELOG.md"))using(var reader=new StreamReader(stream))Require(reader.ReadToEnd().Contains("2026-10-24 | v0.2.37"),"Dated changelog resource missing");
  }
  static void VerifyCommanderEnergy(string file){
   using(var zip=System.IO.Compression.ZipFile.OpenRead(file)){
