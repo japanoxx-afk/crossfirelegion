@@ -2,6 +2,8 @@ using System;
 using System.IO;
 class UpdaterTests {
  static void Main(){string root=Path.Combine(Path.GetTempPath(),"cfl-update-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);try{
+  if(Updater.NewerVersion("v0.2.34","0.2.33")!="0.2.34" || Updater.NewerVersion("v0.2.33","0.2.33")!=null || Updater.NewerVersion("v0.2.32","0.2.33")!=null)throw new Exception("Startup update version decision failed");
+  bool invalid=false;try{Updater.NewerVersion("v../bad","0.2.33");}catch{invalid=true;}if(!invalid)throw new Exception("Invalid release tag accepted");
   string source=AppDomain.CurrentDomain.BaseDirectory;Func<string> stage=()=>{string p=Path.Combine(root,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(p);foreach(string n in new[]{"Application.exe","Mono.Cecil.dll","THIRD-PARTY-NOTICES.txt"})File.Copy(Path.Combine(source,n),Path.Combine(p,n));return p;};
   string first=Updater.InstallVerified(root,"1.0.0",stage());if(!File.Exists(first)||File.ReadAllText(Path.Combine(root,"current.txt"))!="1.0.0")throw new Exception("First install failed");
   File.WriteAllText(Path.Combine(root,"current.txt"),"0.1.0");Updater.InstallVerified(root,"1.0.0",stage());if(File.ReadAllText(Path.Combine(root,"current.txt"))!="1.0.0")throw new Exception("Retry activation failed");

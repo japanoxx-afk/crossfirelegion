@@ -7,16 +7,24 @@ using System.Web.Script.Serialization;
 using System.Collections.Generic;
 public static class Updater {
  public const string Repo="japanoxx-afk/crossfirelegion";
- public static async Task<string> Update(string root, string current){
+ public static string NewerVersion(string tag,string current){string version=tag.TrimStart('v');Version latest=Version.Parse(version);if(version!=latest.ToString() || tag!="v"+version)throw new Exception("잘못된 릴리스 버전입니다.");return latest>Version.Parse(current)?version:null;}
+ public static async Task<string> CheckLatest(string current){
   ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
   using(var web=new WebClient()){
    web.Headers["User-Agent"]="CrossfireLegionLauncher/"+current;
    var json=new JavaScriptSerializer();
-   var release=json.Deserialize<Dictionary<string,object>>(await web.DownloadStringTaskAsync("https://api.github.com/repos/"+Repo+"/releases/latest?check="+DateTime.UtcNow.Ticks));
-   string tag=(string)release["tag_name"], version=tag.TrimStart('v');
-   Version latest=Version.Parse(version);
-   if(version!=latest.ToString())throw new Exception("잘못된 릴리스 버전입니다.");
-   if(latest<=Version.Parse(current)){Activate(root,current);return null;}
+   var download=web.DownloadStringTaskAsync("https://api.github.com/repos/"+Repo+"/releases/latest?check="+DateTime.UtcNow.Ticks);
+   if(await Task.WhenAny(download,Task.Delay(10000))!=download){web.CancelAsync();throw new TimeoutException("최신 버전 확인 시간이 초과되었습니다.");}
+   var release=json.Deserialize<Dictionary<string,object>>(await download);
+   return NewerVersion((string)release["tag_name"],current);
+  }
+ }
+ public static async Task<string> Update(string root, string current){string version=await CheckLatest(current);if(version==null){Activate(root,current);return null;}return await UpdateTo(root,current,version);}
+ public static async Task<string> UpdateTo(string root,string current,string version){
+  string tag="v"+version;if(NewerVersion(tag,current)==null)throw new Exception("현재보다 새로운 버전만 설치할 수 있습니다.");Version latest=Version.Parse(version);
+  ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
+  using(var web=new WebClient()){
+   web.Headers["User-Agent"]="CrossfireLegionLauncher/"+current;
    string prefix="https://github.com/"+Repo+"/releases/download/"+Uri.EscapeDataString(tag)+"/";
    string staging=Path.Combine(root,"versions",".download-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(staging);
    try{

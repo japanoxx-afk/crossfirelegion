@@ -34,6 +34,19 @@ class Launcher:Form {
   log.SetBounds(25,350,710,115);log.Multiline=true;log.ReadOnly=true;log.ScrollBars=ScrollBars.Vertical;log.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;log.BackColor=Color.FromArgb(13,17,23);log.ForeColor=Color.LightGray;Controls.Add(log);
   path.Text=File.Exists(config)?File.ReadAllText(config):@"C:\Program Files (x86)\Steam\steamapps\common\Crossfire Legion (Demo)";
   path.Leave+=(s,e)=>{Save();RefreshStatus();};RefreshStatus();Write("런처 준비 완료 · v"+CurrentVersion);
+  Shown+=async(s,e)=>await CheckStartupUpdate();
+ }
+ async Task CheckStartupUpdate(){
+  try{
+   Write("GitHub 최신 버전 자동 확인 중…");string version=await Updater.CheckLatest(CurrentVersion);
+   if(IsDisposed||Disposing)return;
+   if(version==null){Write("최신 버전입니다 · v"+CurrentVersion);return;}
+   if(!actions.Enabled||OwnedForms.Length>0){Write("새 버전 v"+version+"이 있습니다. 런처 업데이트 버튼으로 설치하세요.");return;}
+   if(MessageBox.Show(this,"새 버전 v"+version+"이 있습니다.\n현재 버전: v"+CurrentVersion+"\n\n지금 다운로드하고 새 런처로 다시 시작할까요?","런처 업데이트",MessageBoxButtons.YesNo,MessageBoxIcon.Question,MessageBoxDefaultButton.Button2)!=DialogResult.Yes){Write("업데이트를 나중으로 미뤘습니다 · 새 버전 v"+version);return;}
+   actions.Enabled=false;path.Enabled=false;
+   try{Write("v"+version+" 다운로드 및 무결성 검사 중…");string next=await Updater.UpdateTo(root,CurrentVersion,version);if(IsDisposed||Disposing)return;Process.Start(new ProcessStartInfo(next,"\""+root.TrimEnd('\\')+"\""){WorkingDirectory=Path.GetDirectoryName(next)});Close();}
+   finally{if(!IsDisposed){actions.Enabled=true;path.Enabled=true;}}
+  }catch(Exception e){if(!IsDisposed&&!Disposing)Write("자동 업데이트 확인/설치 실패: "+e.Message+" · 런처 업데이트 버튼으로 다시 시도할 수 있습니다.");}
  }
  void AddButton(string text,Func<Task> action){var b=new Button{Text=text,Size=new Size(168,38),FlatStyle=FlatStyle.Flat,BackColor=Color.FromArgb(40,54,69),ForeColor=Color.White};b.Click+=async(s,e)=>{actions.Enabled=false;path.Enabled=false;try{await action();Write(text+" 완료");}catch(Exception ex){Write("실패: "+ex.Message);MessageBox.Show(this,ex.Message,text);}finally{actions.Enabled=true;path.Enabled=true;RefreshStatus();}};actions.Controls.Add(b);}
  void Save(){Directory.CreateDirectory(Path.GetDirectoryName(config));File.WriteAllText(config,path.Text);}
